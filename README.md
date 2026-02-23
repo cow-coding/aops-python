@@ -1,5 +1,8 @@
 # aops
 
+[![PyPI](https://img.shields.io/pypi/v/aops)](https://pypi.org/project/aops/)
+[![Python](https://img.shields.io/pypi/pyversions/aops)](https://pypi.org/project/aops/)
+
 LangChain integration library for [AOps](https://github.com/cow-coding/aops) — load and version-control your agent prompts from the AOps backend.
 
 ## Installation
