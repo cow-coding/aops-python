@@ -1,9 +1,14 @@
+import logging
+import threading
+import time
 import uuid
 
 import httpx
 
 from aops._cache import TTLCache
 from aops._config import get_config
+
+_logger = logging.getLogger(__name__)
 from aops._exceptions import (
     AgentNotFoundError,
     AopsConnectionError,
@@ -24,6 +29,7 @@ class AopsClient:
         base_url: str | None = None,
         api_prefix: str | None = None,
         cache_ttl: int | None = None,
+        poll_interval: int | None = None,
     ) -> None:
         if api_key is not None or base_url is not None:
             # Explicit construction — resolve host from key, then allow override
@@ -31,13 +37,22 @@ class AopsClient:
             self._api_base = f"{resolved_url.rstrip('/')}{api_prefix or '/api/v1'}"
             self._api_key = api_key
             ttl = cache_ttl if cache_ttl is not None else 300
+            interval = poll_interval if poll_interval is not None else 60
         else:
             config = get_config()
             self._api_base = config.api_base
             self._api_key = config.api_key
             ttl = cache_ttl if cache_ttl is not None else config.cache_ttl
+            interval = poll_interval if poll_interval is not None else config.poll_interval
 
         self._cache = TTLCache(ttl)
+        self._poll_interval = interval
+        self._poll_targets: dict[str, tuple[uuid.UUID, uuid.UUID]] = {}  # cache_key → (agent_id, chain_id)
+        self._poll_lock = threading.Lock()
+
+        if self._poll_interval > 0:
+            t = threading.Thread(target=self._poll_loop, daemon=True, name="aops-poller")
+            t.start()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -77,6 +92,31 @@ class AopsClient:
             ) from exc
 
     # ------------------------------------------------------------------
+    # Polling
+    # ------------------------------------------------------------------
+
+    def _poll_loop(self) -> None:
+        while True:
+            time.sleep(self._poll_interval)
+            self._refresh_chains()
+
+    def _refresh_chains(self) -> None:
+        with self._poll_lock:
+            targets = dict(self._poll_targets)
+
+        for cache_key, (agent_id, chain_id) in targets.items():
+            try:
+                data = self._get(f"/agents/{agent_id}/chains/{chain_id}")
+                fresh = ChainModel(**data)
+                cached: ChainModel | None = self._cache.get(cache_key)
+                if cached is None or cached.updated_at != fresh.updated_at:
+                    self._cache.set(cache_key, fresh)
+                    if cached is not None:
+                        _logger.info("aops: chain '%s' updated (v%s)", fresh.name, fresh.updated_at)
+            except Exception as exc:
+                _logger.debug("aops: poll failed for %s: %s", cache_key, exc)
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -107,6 +147,8 @@ class AopsClient:
         for chain in chains:
             if chain.name == chain_name:
                 self._cache.set(cache_key, chain)
+                with self._poll_lock:
+                    self._poll_targets[cache_key] = (agent_id, chain.id)
                 return chain
 
         raise ChainNotFoundError(

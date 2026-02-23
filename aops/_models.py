@@ -17,7 +17,7 @@ class ChainModel(BaseModel):
     agent_id: uuid.UUID
     name: str
     description: str | None
-    persona: str
+    persona: str | None
     content: str
     created_at: datetime
     updated_at: datetime
@@ -26,7 +26,7 @@ class ChainModel(BaseModel):
 class ChainVersionModel(BaseModel):
     id: uuid.UUID
     chain_id: uuid.UUID
-    persona: str
+    persona: str | None
     content: str
     message: str
     version_number: int

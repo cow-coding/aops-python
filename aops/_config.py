@@ -10,6 +10,7 @@ class Config:
     api_prefix: str = "/api/v1"
     api_key: str | None = None
     cache_ttl: int = 300  # seconds; 0 = no cache
+    poll_interval: int = 60  # seconds; 0 = no polling
 
     @property
     def api_base(self) -> str:
@@ -25,6 +26,7 @@ def init(
     base_url: str | None = None,
     api_prefix: str | None = None,
     cache_ttl: int | None = None,
+    poll_interval: int | None = None,
 ) -> None:
     """Configure the AgentOps connection.
 
@@ -37,10 +39,11 @@ def init(
         aops.init(api_key="aops_...", base_url="http://my-proxy:9000")
 
     Environment variables (when ``init()`` is not called explicitly):
-        AGENTOPS_API_KEY    — the API key (host is parsed from it)
-        AGENTOPS_BASE_URL   — overrides the host embedded in the key
-        AGENTOPS_API_PREFIX — default: /api/v1
-        AGENTOPS_CACHE_TTL  — default: 300 (seconds)
+        AGENTOPS_API_KEY       — the API key (host is parsed from it)
+        AGENTOPS_BASE_URL      — overrides the host embedded in the key
+        AGENTOPS_API_PREFIX    — default: /api/v1
+        AGENTOPS_CACHE_TTL     — default: 300 (seconds)
+        AGENTOPS_POLL_INTERVAL — default: 60 (seconds); 0 = disable polling
     """
     global _config
 
@@ -54,6 +57,7 @@ def init(
         api_prefix=api_prefix or os.getenv("AGENTOPS_API_PREFIX", "/api/v1"),
         api_key=resolved_key,
         cache_ttl=cache_ttl if cache_ttl is not None else int(os.getenv("AGENTOPS_CACHE_TTL", "300")),
+        poll_interval=poll_interval if poll_interval is not None else int(os.getenv("AGENTOPS_POLL_INTERVAL", "60")),
     )
 
 
@@ -67,6 +71,7 @@ def get_config() -> Config:
             api_prefix=os.getenv("AGENTOPS_API_PREFIX", "/api/v1"),
             api_key=resolved_key,
             cache_ttl=int(os.getenv("AGENTOPS_CACHE_TTL", "300")),
+            poll_interval=int(os.getenv("AGENTOPS_POLL_INTERVAL", "60")),
         )
     return _config
 
