@@ -1,0 +1,147 @@
+import uuid
+
+import httpx
+
+from aops._cache import TTLCache
+from aops._config import get_config
+from aops._exceptions import (
+    AgentNotFoundError,
+    AopsConnectionError,
+    ChainNotFoundError,
+    VersionNotFoundError,
+)
+from aops._keys import InvalidApiKeyError, parse_key
+from aops._models import AgentModel, ChainModel, ChainVersionModel
+
+
+class AopsClient:
+    """HTTP client for the AgentOps backend API."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        base_url: str | None = None,
+        api_prefix: str | None = None,
+        cache_ttl: int | None = None,
+    ) -> None:
+        if api_key is not None or base_url is not None:
+            # Explicit construction — resolve host from key, then allow override
+            resolved_url = base_url or _host_from_key(api_key)
+            self._api_base = f"{resolved_url.rstrip('/')}{api_prefix or '/api/v1'}"
+            self._api_key = api_key
+            ttl = cache_ttl if cache_ttl is not None else 300
+        else:
+            config = get_config()
+            self._api_base = config.api_base
+            self._api_key = config.api_key
+            ttl = cache_ttl if cache_ttl is not None else config.cache_ttl
+
+        self._cache = TTLCache(ttl)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        if self._api_key:
+            return {"Authorization": f"Bearer {self._api_key}"}
+        return {}
+
+    def _get(self, path: str) -> list | dict:
+        url = f"{self._api_base}{path}"
+        try:
+            with httpx.Client() as client:
+                response = client.get(url, headers=self._headers())
+                response.raise_for_status()
+                return response.json()
+        except httpx.ConnectError as exc:
+            raise AopsConnectionError(
+                f"Cannot reach AgentOps at '{self._api_base}'. "
+                "Check that the backend is running and your API key is correct."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 401:
+                raise AopsConnectionError(
+                    "AgentOps rejected the API key (401 Unauthorized). "
+                    "Check that AGENTOPS_API_KEY is valid."
+                ) from exc
+            if status == 403:
+                raise AopsConnectionError(
+                    "Access denied (403 Forbidden). "
+                    "This API key may not have access to the requested agent."
+                ) from exc
+            raise AopsConnectionError(
+                f"AgentOps returned {status} for {url}"
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def get_agent_by_name(self, agent_name: str) -> AgentModel:
+        cache_key = f"agent:{agent_name}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        agents = [AgentModel(**a) for a in self._get("/agents/")]
+        for agent in agents:
+            if agent.name == agent_name:
+                self._cache.set(cache_key, agent)
+                return agent
+
+        raise AgentNotFoundError(
+            f"Agent '{agent_name}' not found. "
+            f"Available agents: {[a.name for a in agents] or '(none)'}"
+        )
+
+    def get_chain_by_name(self, agent_id: uuid.UUID, chain_name: str) -> ChainModel:
+        cache_key = f"chain:{agent_id}:{chain_name}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        chains = [ChainModel(**c) for c in self._get(f"/agents/{agent_id}/chains/")]
+        for chain in chains:
+            if chain.name == chain_name:
+                self._cache.set(cache_key, chain)
+                return chain
+
+        raise ChainNotFoundError(
+            f"Chain '{chain_name}' not found. "
+            f"Available chains: {[c.name for c in chains] or '(none)'}"
+        )
+
+    def get_chain_version(
+        self, agent_id: uuid.UUID, chain_id: uuid.UUID, version_number: int
+    ) -> ChainVersionModel:
+        cache_key = f"version:{chain_id}:{version_number}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        versions = [
+            ChainVersionModel(**v)
+            for v in self._get(f"/agents/{agent_id}/chains/{chain_id}/versions/")
+        ]
+        for version in versions:
+            if version.version_number == version_number:
+                self._cache.set(cache_key, version)
+                return version
+
+        available = sorted(v.version_number for v in versions)
+        raise VersionNotFoundError(
+            f"Version {version_number} not found. Available versions: {available or '(none)'}"
+        )
+
+
+def _host_from_key(api_key: str | None) -> str:
+    if api_key is None:
+        return "http://localhost:8000"
+    try:
+        host, _ = parse_key(api_key)
+        return host
+    except InvalidApiKeyError:
+        return "http://localhost:8000"
