@@ -1,29 +1,12 @@
 """
-aops — 프롬프트 로딩 패턴 및 polling 테스트
-============================================
+aops — usage examples
+=====================
+Step-by-step examples from basic usage to live updates.
 
-패턴 선택 가이드
-----------------
-aops는 세 가지 사용 패턴을 제공합니다. 목적에 맞게 선택하세요.
-
-┌─────────────────────────────┬──────────────┬──────────────────────────────────┐
-│ 패턴                        │ 프롬프트 갱신 │ 적합한 상황                       │
-├─────────────────────────────┼──────────────┼──────────────────────────────────┤
-│ pull() 직접 호출            │ O (실시간)   │ 매번 최신 프롬프트가 필요한 경우   │
-│ @chain_prompt 함수 데코레이터│ O (실시간)   │ 호출마다 프롬프트를 갱신하고 싶을 때│
-│ @chain_prompt 클래스 데코레이터│ X (고정)   │ 성능 중시, 프롬프트 변경 빈도 낮음 │
-└─────────────────────────────┴──────────────┴──────────────────────────────────┘
-
-클래스 데코레이터는 __init__ 시점에 프롬프트를 1회 fetch하여 고정합니다.
-프롬프트를 실시간으로 반영해야 한다면 pull() 또는 함수 데코레이터를 사용하세요.
-
-실행 방법:
-    python example.py
-
-polling 테스트 방법:
-    1. 이 스크립트를 실행합니다.
-    2. 웹 UI (http://localhost:3000) 에서 test-agent > user-input 프롬프트를 수정하고 커밋합니다.
-    3. 최대 POLL_INTERVAL 초 안에 "[UPDATED]" 메시지와 함께 새 프롬프트가 출력됩니다.
+Before running:
+    1. Start the AOps backend (http://localhost:8000)
+    2. Issue an API key from the AOps UI and paste it into API_KEY below
+    3. pip install python-dotenv langchain-openai
 """
 
 import time
@@ -37,27 +20,92 @@ from aops.langchain import chain_prompt, pull
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 
-# ── 설정 ──────────────────────────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────────────
 API_KEY = "aops_aHR0cDovL2xvY2FsaG9zdDo4MDAw_9WGQ-SGP2J2WpFeXBmQ5u50b34ZvhwlhaGaQXJoZJzU"
 AGENT_NAME = "test-agent"
 CHAIN_NAME = "user-input"
-POLL_INTERVAL = 10   # 테스트용 10초 (기본값 60초)
-CHECK_EVERY = 5      # 5초마다 출력
 
-aops.init(api_key=API_KEY, poll_interval=POLL_INTERVAL)
+aops.init(api_key=API_KEY, poll_interval=10)  # 10s for testing (default: 60s)
 
 
-# ── 헬퍼 ──────────────────────────────────────────────────────────────────────
+# ── Example 1: pull() — basic usage ───────────────────────────────────────────
+# Fetch the prompt and build a LangChain chain directly.
+
+def example_pull():
+    print("=== Example 1: pull() ===")
+    prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
+
+    chain = (
+        ChatPromptTemplate.from_messages([
+            prompt,
+            HumanMessagePromptTemplate.from_template("{user_input}"),
+        ])
+        | ChatOpenAI(model="gpt-4o-mini")
+        | StrOutputParser()
+    )
+
+    result = chain.invoke({"user_input": "Hello, how's the weather today?"})
+    print(result)
+
+
+# ── Example 2: @chain_prompt function decorator ───────────────────────────────
+# Reads the prompt from cache on every call and builds the chain fresh.
+
+@chain_prompt(AGENT_NAME, CHAIN_NAME)
+def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
+    return (
+        ChatPromptTemplate.from_messages([
+            prompt,
+            HumanMessagePromptTemplate.from_template("{user_input}"),
+        ])
+        | ChatOpenAI(model="gpt-4o-mini")
+        | StrOutputParser()
+    ).invoke({"user_input": user_input})
+
+def example_function_decorator():
+    print("\n=== Example 2: @chain_prompt function decorator ===")
+    result = answer(user_input="What's the weather like tomorrow?")
+    print(result)
+
+
+# ── Example 3: @chain_prompt class decorator ──────────────────────────────────
+# Fetches the prompt once at __init__ and bakes it into the chain.
+# Best for performance-sensitive agents where the prompt changes infrequently.
+# Note: to pick up a prompt update, re-instantiate the class.
+
+@chain_prompt(AGENT_NAME, CHAIN_NAME)
+class WeatherAgent:
+    def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
+        self.chain = (
+            ChatPromptTemplate.from_messages([
+                prompt,
+                HumanMessagePromptTemplate.from_template("{user_input}"),
+            ])
+            | ChatOpenAI(model="gpt-4o-mini")
+            | StrOutputParser()
+        )
+
+    def run(self, user_input: str) -> str:
+        return self.chain.invoke({"user_input": user_input})
+
+def example_class_decorator():
+    print("\n=== Example 3: @chain_prompt class decorator ===")
+    agent = WeatherAgent()
+    result = agent.run(user_input="How's the weather in Busan this weekend?")
+    print(result)
+
+
+# ── Example 4: Live Update — pull() loop ──────────────────────────────────────
+# Verifies that background polling works.
+# Edit the prompt in the web UI (http://localhost:3000) and the change will be
+# reflected within POLL_INTERVAL seconds.
+
 def summarize(prompt) -> str:
     return textwrap.shorten(prompt.prompt.template, width=80, placeholder="...")
 
-
-# ── Case 1: pull() — polling 반영 O ──────────────────────────────────────────
-# 매 루프마다 캐시에서 읽기 때문에 polling으로 갱신된 내용이 바로 반영됩니다.
-
-def test_pull():
-    print(f"\n[pull()] Watching '{AGENT_NAME}/{CHAIN_NAME}' — polling every {POLL_INTERVAL}s")
-    print("웹 UI에서 프롬프트를 수정하면 반영됩니다.\n")
+def example_live_update_pull():
+    print(f"\n=== Example 4: Live Update (pull) — polling every {aops._config._config.poll_interval}s ===")
+    print("Edit the prompt in the web UI. [UPDATED] will appear when a change is detected.\n")
     last_content = None
     while True:
         try:
@@ -72,69 +120,43 @@ def test_pull():
             last_content = current
         except Exception as e:
             print(f"[ERROR]   {e}")
-        time.sleep(CHECK_EVERY)
+        time.sleep(5)
 
 
-# ── Case 2: @chain_prompt 함수 데코레이터 — polling 반영 O ───────────────────
-# 함수 호출마다 pull()을 실행하므로 polling으로 갱신된 캐시가 반영됩니다.
+# ── Example 5: Live Update — function decorator loop ─────────────────────────
+# The function decorator reads from cache on every call, so polling updates
+# are reflected automatically. Here we use pull() to detect changes and
+# answer() to execute with the updated prompt.
 
-@chain_prompt(AGENT_NAME, CHAIN_NAME)
-def get_prompt(prompt: SystemMessagePromptTemplate) -> SystemMessagePromptTemplate:
-    return prompt
-
-def test_function_decorator():
-    print(f"\n[@chain_prompt 함수] Watching '{AGENT_NAME}/{CHAIN_NAME}'\n")
+def example_live_update_decorator():
+    print(f"\n=== Example 5: Live Update (@chain_prompt function) ===")
+    print("Edit the prompt in the web UI.\n")
     last_content = None
     while True:
         try:
-            prompt = get_prompt()
+            # detect prompt change via pull()
+            prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
             current = prompt.prompt.template
             if last_content is None:
                 print(f"[INIT]    {summarize(prompt)}")
             elif current != last_content:
                 print(f"[UPDATED] {summarize(prompt)}")
+                # function decorator reads the new prompt from cache
+                result = answer(user_input="Test question.")
+                print(f"          → {textwrap.shorten(result, width=60, placeholder='...')}")
             else:
                 print(f"[OK]      {summarize(prompt)}")
             last_content = current
         except Exception as e:
             print(f"[ERROR]   {e}")
-        time.sleep(CHECK_EVERY)
+        time.sleep(5)
 
 
-# ── Case 3: @chain_prompt 클래스 데코레이터 — polling 반영 X ─────────────────
-# __init__ 시 한 번만 fetch하여 self.chain에 고정됩니다.
-# 프롬프트 변경을 반영하려면 인스턴스를 다시 생성해야 합니다.
+# ── Run ───────────────────────────────────────────────────────────────────────
+# Uncomment the example you want to run.
 
-@chain_prompt(AGENT_NAME, CHAIN_NAME)
-class PromptAgent:
-    def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
-        self._template = prompt.prompt.template  # 생성 시점에 고정됨
-
-    def current_template(self) -> str:
-        return self._template
-
-def test_class_decorator():
-    print(f"\n[@chain_prompt 클래스] Watching '{AGENT_NAME}/{CHAIN_NAME}'")
-    print("※ 클래스 데코레이터는 인스턴스 생성 시점의 프롬프트를 사용합니다.")
-    print("  변경 반영이 필요하면 인스턴스를 재생성해야 합니다.\n")
-    agent = PromptAgent()
-    last_content = agent.current_template()
-    print(f"[INIT]    {textwrap.shorten(last_content, width=80, placeholder='...')}")
-    while True:
-        time.sleep(CHECK_EVERY)
-        current = agent.current_template()
-        # 인스턴스를 재생성하면 갱신된 프롬프트를 사용할 수 있습니다:
-        # agent = PromptAgent()
-        # current = agent.current_template()
-        if current != last_content:
-            print(f"[UPDATED] {textwrap.shorten(current, width=80, placeholder='...')}")
-            last_content = current
-        else:
-            print(f"[NO CHANGE] (재생성 없이는 변경 안 됨)")
-
-
-# ── 실행 ──────────────────────────────────────────────────────────────────────
-# 테스트할 케이스를 선택하세요.
-test_pull()
-# test_function_decorator()
-# test_class_decorator()
+# example_pull()                  # basic pull() usage
+# example_function_decorator()    # function decorator
+# example_class_decorator()       # class decorator (fixed prompt)
+example_live_update_pull()        # live update via pull() loop
+# example_live_update_decorator() # live update via function decorator loop
