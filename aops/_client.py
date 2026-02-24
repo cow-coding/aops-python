@@ -60,7 +60,7 @@ class AopsClient:
 
     def _headers(self) -> dict[str, str]:
         if self._api_key:
-            return {"Authorization": f"Bearer {self._api_key}"}
+            return {"X-API-Key": self._api_key}
         return {}
 
     def _get(self, path: str) -> list | dict:
