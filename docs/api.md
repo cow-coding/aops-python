@@ -175,7 +175,7 @@ Low-level HTTP client. Normally you don't need to instantiate it directly — `p
 Useful when you need explicit lifecycle control (e.g. short-lived scripts, tests, or multiple isolated clients):
 
 ```python
-from aops._client import AopsClient
+from aops import AopsClient
 
 # Context manager — closes the HTTP pool and stops the poller on exit
 with AopsClient(api_key="aops_...", poll_interval=0) as client:

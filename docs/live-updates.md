@@ -113,15 +113,18 @@ The polling thread is a daemon thread and exits automatically when the process e
 For short-lived scripts or tests where you need to stop it explicitly, call `close()` on the client:
 
 ```python
-from aops._client import AopsClient
+import aops
+from aops import AopsClient, pull
 
-with AopsClient(api_key="aops_...", agent="my-agent", poll_interval=30) as client:
+aops.init(agent="my-agent")
+
+with AopsClient(api_key="aops_...", poll_interval=30) as client:
     prompt = pull("my-chain", client=client)
     # ... do work ...
 # poller stops and HTTP pool closes here
 
 # Or manually:
-client = AopsClient(api_key="aops_...", agent="my-agent")
+client = AopsClient(api_key="aops_...")
 try:
     prompt = pull("my-chain", client=client)
 finally:
