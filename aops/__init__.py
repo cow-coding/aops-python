@@ -1,11 +1,12 @@
-"""aops — LangChain integration for AgentOps.
+"""aops — Python SDK for AgentOps prompt version management.
 
 Quick start::
 
     import aops
     aops.init(api_key="aops_aHR0cDovL2xvY2FsaG9zdDo4MDAw_...")
 
-    from aops.langchain import pull, chain_prompt
+    from aops import pull  # framework-agnostic raw string
+    from aops.langchain import pull, chain_prompt  # LangChain integration
 """
 
 from aops._client import AopsClient
@@ -18,9 +19,11 @@ from aops._exceptions import (
     VersionNotFoundError,
 )
 from aops._keys import generate_key, parse_key
+from aops._pull import pull
 
 __all__ = [
     "init",
+    "pull",
     "AopsClient",
     "generate_key",
     "parse_key",

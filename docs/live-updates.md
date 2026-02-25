@@ -1,8 +1,8 @@
 # Live Updates (Polling)
 
-AOps SDK automatically polls the backend every 60 seconds and refreshes the
-prompt cache when the chain's content changes. This means prompt updates made
-in the AOps web UI are reflected in your running agent within one poll cycle.
+The AOps SDK automatically polls the backend every 60 seconds and refreshes the
+prompt cache when a chain's content changes. Prompt updates made in the AOps web
+UI are reflected in your running agent within one poll cycle.
 
 ## How It Works
 
@@ -13,11 +13,9 @@ in the AOps web UI are reflected in your running agent within one poll cycle.
 
 ## Pattern Selection
 
-Choose the right pattern based on your needs:
-
 | Pattern | Live updates | Best for |
 |---|---|---|
-| `pull()` direct call | ✅ | Fetching latest prompt on every invocation |
+| `pull()` direct call | ✅ | Fetching the latest prompt on every invocation |
 | `@chain_prompt` function decorator | ✅ | Functions that should always use the current prompt |
 | `@chain_prompt` class decorator | ❌ (fixed at init) | Performance-sensitive agents with infrequent prompt changes |
 
@@ -26,11 +24,11 @@ Choose the right pattern based on your needs:
 ```python
 import aops
 
-# Polling every 30 seconds
-aops.init(api_key="aops_...", poll_interval=30)
+# Poll every 30 seconds
+aops.init(api_key="aops_...", agent="my-agent", poll_interval=30)
 
 # Disable polling
-aops.init(api_key="aops_...", poll_interval=0)
+aops.init(api_key="aops_...", agent="my-agent", poll_interval=0)
 ```
 
 Or via environment variable:
@@ -41,24 +39,46 @@ AGENTOPS_POLL_INTERVAL=30  # seconds; 0 = disable
 
 ## Examples
 
-### `pull()` — always reflects latest prompt
+### `pull()` — always reflects the latest prompt
 
 ```python
-from aops.langchain import pull
+import aops
+from aops import pull
 
-# Each call reads from cache; cache is refreshed by the background poller
-prompt = pull("my-agent/my-chain")
+aops.init(api_key="aops_...", agent="my-agent")
+
+# Reads from cache; the background poller refreshes the cache on change
+system_prompt = pull("my-chain")  # returns str
 ```
 
-### Function decorator — live updates per call
+### Live change detection loop
+
+```python
+import time
+from aops import pull
+
+last = None
+while True:
+    current = pull("my-chain")
+    if last is None:
+        print(f"[INIT]    {current[:60]}...")
+    elif current != last:
+        print(f"[UPDATED] {current[:60]}...")
+    else:
+        print(f"[OK]      (no change)")
+    last = current
+    time.sleep(5)
+```
+
+### LangChain — function decorator (live updates)
 
 ```python
 from aops.langchain import chain_prompt
 from langchain_core.prompts import SystemMessagePromptTemplate
 
-@chain_prompt("my-agent", "my-chain")
+@chain_prompt("my-chain")
 def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
-    # prompt is always up-to-date (fetched from cache on each call)
+    # prompt is always up-to-date (read from cache on each call)
     chain = ChatPromptTemplate.from_messages([
         prompt,
         HumanMessagePromptTemplate.from_template("{user_input}"),
@@ -66,10 +86,10 @@ def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
     return chain.invoke({"user_input": user_input})
 ```
 
-### Class decorator — fixed prompt (by design)
+### LangChain — class decorator (fixed prompt)
 
 ```python
-@chain_prompt("my-agent", "my-chain")
+@chain_prompt("my-chain")
 class MyAgent:
     def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
         # prompt is fixed at construction time
@@ -78,11 +98,37 @@ class MyAgent:
     def run(self, user_input: str) -> str:
         return self.chain.invoke({"user_input": user_input})
 
-agent = MyAgent()  # prompt baked in here
+agent = MyAgent()  # prompt is baked in here
 ```
 
 To apply a prompt update with the class decorator, re-instantiate:
 
 ```python
-agent = MyAgent()  # re-instantiate to pick up the latest prompt
+agent = MyAgent()
 ```
+
+## Stopping the Poller
+
+The polling thread is a daemon thread and exits automatically when the process ends.
+For short-lived scripts or tests where you need to stop it explicitly, call `close()` on the client:
+
+```python
+import aops
+from aops import AopsClient, pull
+
+aops.init(agent="my-agent")
+
+with AopsClient(api_key="aops_...", poll_interval=30) as client:
+    prompt = pull("my-chain", client=client)
+    # ... do work ...
+# poller stops and HTTP pool closes here
+
+# Or manually:
+client = AopsClient(api_key="aops_...")
+try:
+    prompt = pull("my-chain", client=client)
+finally:
+    client.close()
+```
+
+> **Note:** The global client created by `aops.init()` is a daemon thread and does not need explicit shutdown in normal application usage.

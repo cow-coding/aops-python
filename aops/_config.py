@@ -9,6 +9,7 @@ class Config:
     base_url: str = "http://localhost:8000"
     api_prefix: str = "/api/v1"
     api_key: str | None = None
+    agent: str | None = None
     cache_ttl: int = 300  # seconds; 0 = no cache
     poll_interval: int = 60  # seconds; 0 = no polling
 
@@ -23,6 +24,7 @@ _config: Config | None = None
 def init(
     api_key: str | None = None,
     *,
+    agent: str | None = None,
     base_url: str | None = None,
     api_prefix: str | None = None,
     cache_ttl: int | None = None,
@@ -30,16 +32,20 @@ def init(
 ) -> None:
     """Configure the AgentOps connection.
 
-    Preferred usage — key only (host is parsed from the key automatically)::
+    Preferred usage::
 
-        aops.init(api_key="aops_aHR0cDovL2xvY2FsaG9zdDo4MDAw_...")
+        aops.init(api_key="aops_...", agent="my-agent")
+
+    After this, ``pull("chain-name")`` resolves to ``my-agent/chain-name``
+    without requiring the agent name on every call.
 
     Manual URL override (e.g. for testing or reverse-proxy setups)::
 
-        aops.init(api_key="aops_...", base_url="http://my-proxy:9000")
+        aops.init(api_key="aops_...", agent="my-agent", base_url="http://my-proxy:9000")
 
     Environment variables (when ``init()`` is not called explicitly):
         AGENTOPS_API_KEY       — the API key (host is parsed from it)
+        AGENTOPS_AGENT         — default agent name
         AGENTOPS_BASE_URL      — overrides the host embedded in the key
         AGENTOPS_API_PREFIX    — default: /api/v1
         AGENTOPS_CACHE_TTL     — default: 300 (seconds)
@@ -56,6 +62,7 @@ def init(
         base_url=resolved_url,
         api_prefix=api_prefix or os.getenv("AGENTOPS_API_PREFIX", "/api/v1"),
         api_key=resolved_key,
+        agent=agent or os.getenv("AGENTOPS_AGENT"),
         cache_ttl=cache_ttl if cache_ttl is not None else int(os.getenv("AGENTOPS_CACHE_TTL", "300")),
         poll_interval=poll_interval if poll_interval is not None else int(os.getenv("AGENTOPS_POLL_INTERVAL", "60")),
     )
@@ -70,6 +77,7 @@ def get_config() -> Config:
             base_url=_resolve_base_url(resolved_key, explicit_url),
             api_prefix=os.getenv("AGENTOPS_API_PREFIX", "/api/v1"),
             api_key=resolved_key,
+            agent=os.getenv("AGENTOPS_AGENT"),
             cache_ttl=int(os.getenv("AGENTOPS_CACHE_TTL", "300")),
             poll_interval=int(os.getenv("AGENTOPS_POLL_INTERVAL", "60")),
         )
