@@ -5,7 +5,7 @@
 
 Python SDK for [AOps](https://github.com/cow-coding/aops) — prompt version management platform.
 
-어떤 LLM SDK와도 바로 사용 가능한 raw `pull()`과, LangChain 통합을 함께 제공합니다.
+Provides a framework-agnostic raw `pull()` that works with any LLM SDK, as well as a LangChain integration.
 
 ## Installation
 

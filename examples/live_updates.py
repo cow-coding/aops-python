@@ -1,8 +1,9 @@
 """
 Live update examples — aops polling
 ======================================
-백그라운드 polling으로 프롬프트 변경을 자동 감지하는 예시.
-AOps 웹 UI에서 프롬프트를 수정하면 POLL_INTERVAL 이내에 반영됨.
+Demonstrates automatic prompt change detection via background polling.
+Edit a prompt in the AOps web UI and the change will be reflected
+within POLL_INTERVAL seconds.
 
 Before running:
     pip install aops python-dotenv
@@ -25,13 +26,13 @@ AGENT_NAME = "test-agent"
 CHAIN_NAME = "user-input"
 
 
-# ── Example 1: pull() loop — raw str 비교 ─────────────────────────────────────
-# pull()은 캐시에서 읽고, 백그라운드 poller가 변경 시 캐시를 갱신.
+# ── Example 1: pull() loop — raw str comparison ───────────────────────────────
+# pull() reads from cache; the background poller refreshes the cache on change.
 
 def example_live_update_pull():
     interval = aops._config._config.poll_interval
     print(f"=== Example 1: Live update (pull) — polling every {interval}s ===")
-    print("AOps 웹 UI에서 프롬프트를 수정하면 [UPDATED]가 표시됩니다.\n")
+    print("Edit the prompt in the AOps web UI. [UPDATED] will appear when a change is detected.\n")
 
     last = None
     while True:
@@ -50,8 +51,9 @@ def example_live_update_pull():
         time.sleep(5)
 
 
-# ── Example 2: @chain_prompt 함수 데코레이터 loop ─────────────────────────────
-# 데코레이터는 매 호출마다 캐시를 읽으므로 polling 업데이트가 자동 반영됨.
+# ── Example 2: @chain_prompt function decorator loop ──────────────────────────
+# The decorator reads from cache on every call, so polling updates are
+# reflected automatically.
 
 def example_live_update_decorator():
     from aops.langchain import chain_prompt
@@ -74,7 +76,7 @@ def example_live_update_decorator():
 
     interval = aops._config._config.poll_interval
     print(f"\n=== Example 2: Live update (@chain_prompt) — polling every {interval}s ===")
-    print("AOps 웹 UI에서 프롬프트를 수정하면 [UPDATED]가 표시됩니다.\n")
+    print("Edit the prompt in the AOps web UI. [UPDATED] will appear when a change is detected.\n")
 
     last = None
     while True:
@@ -95,8 +97,8 @@ def example_live_update_decorator():
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
-# 실행할 예시의 주석을 해제하세요.
+# Uncomment the example you want to run.
 
 if __name__ == "__main__":
     example_live_update_pull()
-    # example_live_update_decorator()  # LangChain 설치 필요: pip install "aops[langchain]" langchain-openai
+    # example_live_update_decorator()  # requires: pip install "aops[langchain]" langchain-openai

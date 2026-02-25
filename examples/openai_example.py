@@ -1,7 +1,7 @@
 """
 OpenAI SDK example — aops raw pull()
 ======================================
-from aops import pull  →  str  →  OpenAI SDK에 직접 전달
+from aops import pull  →  str  →  pass directly to OpenAI SDK
 
 Before running:
     pip install aops openai python-dotenv
@@ -27,7 +27,7 @@ MODEL = "gpt-4o-mini"
 client = OpenAI()
 
 
-# ── Example 1: 기본 사용 ───────────────────────────────────────────────────────
+# ── Example 1: basic usage ────────────────────────────────────────────────────
 
 def example_basic():
     print("=== Example 1: raw pull() + OpenAI ===")
@@ -43,7 +43,7 @@ def example_basic():
     print(response.choices[0].message.content)
 
 
-# ── Example 2: 특정 버전 고정 ──────────────────────────────────────────────────
+# ── Example 2: pin a specific version ────────────────────────────────────────
 
 def example_pinned_version():
     print("\n=== Example 2: pull(version=1) + OpenAI ===")

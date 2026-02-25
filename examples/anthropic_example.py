@@ -1,7 +1,7 @@
 """
 Anthropic SDK example — aops raw pull()
 =========================================
-from aops import pull  →  str  →  Anthropic SDK에 직접 전달
+from aops import pull  →  str  →  pass directly to Anthropic SDK
 
 Before running:
     pip install aops anthropic python-dotenv
@@ -27,7 +27,7 @@ MODEL = "claude-haiku-4-5-20251001"
 client = Anthropic()
 
 
-# ── Example 1: 기본 사용 ───────────────────────────────────────────────────────
+# ── Example 1: basic usage ────────────────────────────────────────────────────
 
 def example_basic():
     print("=== Example 1: raw pull() + Anthropic ===")
@@ -44,7 +44,7 @@ def example_basic():
     print(message.content[0].text)
 
 
-# ── Example 2: 특정 버전 고정 ──────────────────────────────────────────────────
+# ── Example 2: pin a specific version ────────────────────────────────────────
 
 def example_pinned_version():
     print("\n=== Example 2: pull(version=1) + Anthropic ===")

@@ -28,7 +28,7 @@ MODEL = "gpt-4o-mini"
 llm = ChatOpenAI(model=MODEL)
 
 
-# ── Example 1: pull() — LangChain chain 직접 구성 ─────────────────────────────
+# ── Example 1: pull() — build a LangChain chain directly ─────────────────────
 
 def example_pull():
     print("=== Example 1: aops.langchain.pull() → LangChain chain ===")
@@ -47,9 +47,9 @@ def example_pull():
     print(result)
 
 
-# ── Example 2: @chain_prompt 함수 데코레이터 ──────────────────────────────────
-# 매 호출마다 캐시에서 프롬프트를 읽어 chain을 새로 구성.
-# 라이브 업데이트가 자동으로 반영됨.
+# ── Example 2: @chain_prompt function decorator ───────────────────────────────
+# Reads the prompt from cache on every call and builds the chain fresh.
+# Live updates are reflected automatically.
 
 @chain_prompt(AGENT_NAME, CHAIN_NAME)
 def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
@@ -63,15 +63,15 @@ def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
     ).invoke({"user_input": user_input})
 
 def example_function_decorator():
-    print("\n=== Example 2: @chain_prompt 함수 데코레이터 ===")
+    print("\n=== Example 2: @chain_prompt function decorator ===")
     result = answer(user_input="What's the weather like tomorrow?")
     print(result)
 
 
-# ── Example 3: @chain_prompt 클래스 데코레이터 ────────────────────────────────
-# __init__에서 프롬프트를 한 번만 fetch하여 chain에 고정.
-# 성능이 중요하고 프롬프트 변경이 드문 에이전트에 적합.
-# 프롬프트 변경을 반영하려면 클래스를 재인스턴스화할 것.
+# ── Example 3: @chain_prompt class decorator ──────────────────────────────────
+# Fetches the prompt once at __init__ and bakes it into the chain.
+# Best for performance-sensitive agents where the prompt changes infrequently.
+# To pick up a prompt update, re-instantiate the class.
 
 @chain_prompt(AGENT_NAME, CHAIN_NAME)
 class WeatherAgent:
@@ -89,7 +89,7 @@ class WeatherAgent:
         return self.chain.invoke({"user_input": user_input})
 
 def example_class_decorator():
-    print("\n=== Example 3: @chain_prompt 클래스 데코레이터 ===")
+    print("\n=== Example 3: @chain_prompt class decorator ===")
     agent = WeatherAgent()
     result = agent.run(user_input="How's the weather in Busan this weekend?")
     print(result)
