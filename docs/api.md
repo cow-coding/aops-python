@@ -1,39 +1,87 @@
 # API Reference
 
-## `pull(ref, *, version=None)`
+## `pull(ref, *, version=None)` — `from aops import pull`
 
-Fetches a chain from AOps and returns a `SystemMessagePromptTemplate`.
+AOps에서 chain을 fetch하여 **raw `str`**로 반환합니다.
+어떤 LLM SDK(OpenAI, Anthropic 등)에도 바로 사용할 수 있습니다.
+
+```python
+from aops import pull
+
+system_prompt = pull("my-agent/my-chain")           # 최신 버전
+system_prompt = pull("my-agent/my-chain", version=2)  # 버전 고정
+```
+
+chain의 `persona`와 `content`가 하나의 문자열로 합쳐집니다:
+
+```
+{persona}
+
+{content}
+```
+
+persona가 비어 있으면 `content`만 반환됩니다.
+
+### OpenAI SDK 예시
+
+```python
+from openai import OpenAI
+
+client = OpenAI()
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "Hello!"},
+    ],
+)
+```
+
+### Anthropic SDK 예시
+
+```python
+from anthropic import Anthropic
+
+client = Anthropic()
+message = client.messages.create(
+    model="claude-haiku-4-5-20251001",
+    max_tokens=1024,
+    system=system_prompt,
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
+
+---
+
+## `pull(ref, *, version=None)` — `from aops.langchain import pull`
+
+AOps에서 chain을 fetch하여 **`SystemMessagePromptTemplate`**로 반환합니다.
+LangChain chain 구성에 직접 사용할 수 있습니다.
 
 ```python
 from aops.langchain import pull
 
-prompt = pull("my-agent/my-chain")           # latest version
-prompt = pull("my-agent/my-chain", version=2)  # pinned version
+prompt = pull("my-agent/my-chain")           # 최신 버전
+prompt = pull("my-agent/my-chain", version=2)  # 버전 고정
 ```
 
-The chain's `persona` and `content` are merged into a single system message:
+> `aops[langchain]` extra 설치 필요: `pip install "aops[langchain]"`
 
-```
-# Persona
-{persona}
-
-# Content
-{content}
-```
-
-- `content` may contain LangChain template variables (e.g. `{language}`)
-- `persona` is treated as a fixed string — braces are escaped automatically
+- `content`는 LangChain 템플릿 변수를 포함할 수 있습니다 (예: `{language}`)
+- `persona`의 중괄호는 자동으로 이스케이프됩니다
 
 ---
 
 ## `@chain_prompt(agent_name, chain_name, *, version=None)`
 
-Decorator that fetches the prompt and injects it as the first argument.
+프롬프트를 fetch하여 첫 번째 인자로 주입하는 데코레이터.
 
-### Function decorator
+> `aops[langchain]` extra 설치 필요: `pip install "aops[langchain]"`
 
-Prompt is fetched on every call (from cache). Use when you want the chain
-built fresh each invocation.
+### 함수 데코레이터
+
+매 호출마다 캐시에서 프롬프트를 읽어 chain을 새로 구성합니다.
+라이브 업데이트가 자동으로 반영됩니다.
 
 ```python
 from aops.langchain import chain_prompt
@@ -53,11 +101,10 @@ def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
 result = answer(user_input="What is AOps?")
 ```
 
-### Class decorator
+### 클래스 데코레이터
 
-Prompt is injected into `__init__` once at construction time. The chain is
-built once and reused across calls — best for performance-sensitive agents
-where the prompt changes infrequently.
+`__init__` 시점에 프롬프트를 한 번 fetch하여 chain에 고정합니다.
+성능이 중요하고 프롬프트 변경이 드문 에이전트에 적합합니다.
 
 ```python
 @chain_prompt("my-agent", "my-chain")
@@ -79,6 +126,6 @@ agent = MyAgent()
 result = agent.run(user_input="Hello!")
 ```
 
-> **Note:** The class decorator bakes the prompt at instantiation time.
-> If you need the prompt to reflect live updates, use `pull()` or the
-> function decorator instead. See [Live Updates](./live-updates.md).
+> **Note:** 클래스 데코레이터는 인스턴스화 시점에 프롬프트를 고정합니다.
+> 라이브 업데이트를 반영하려면 `pull()`이나 함수 데코레이터를 사용하세요.
+> 자세한 내용은 [Live Updates](./live-updates.md)를 참고하세요.

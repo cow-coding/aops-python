@@ -1,39 +1,36 @@
 # Live Updates (Polling)
 
-AOps SDK automatically polls the backend every 60 seconds and refreshes the
-prompt cache when the chain's content changes. This means prompt updates made
-in the AOps web UI are reflected in your running agent within one poll cycle.
+AOps SDK는 백그라운드에서 60초마다 backend를 polling하여 프롬프트 캐시를 갱신합니다.
+AOps 웹 UI에서 프롬프트를 수정하면 다음 poll cycle 이내에 실행 중인 에이전트에 반영됩니다.
 
 ## How It Works
 
-1. On the first `pull()` or decorator call, the chain is fetched and cached
-2. A background daemon thread polls `GET /agents/{id}/chains/{id}` every `poll_interval` seconds
-3. If `updated_at` has changed, the cache is refreshed immediately
-4. The next `pull()` call returns the updated prompt
+1. 첫 `pull()` 또는 데코레이터 호출 시 chain을 fetch하여 캐시에 저장
+2. 백그라운드 daemon thread가 `poll_interval`초마다 `GET /agents/{id}/chains/{id}` 호출
+3. `updated_at`이 변경된 경우 캐시를 즉시 갱신
+4. 다음 `pull()` 호출에서 업데이트된 프롬프트가 반환됨
 
 ## Pattern Selection
 
-Choose the right pattern based on your needs:
-
-| Pattern | Live updates | Best for |
+| Pattern | 라이브 업데이트 | 적합한 상황 |
 |---|---|---|
-| `pull()` direct call | ✅ | Fetching latest prompt on every invocation |
-| `@chain_prompt` function decorator | ✅ | Functions that should always use the current prompt |
-| `@chain_prompt` class decorator | ❌ (fixed at init) | Performance-sensitive agents with infrequent prompt changes |
+| `pull()` 직접 호출 | ✅ | 매 호출마다 최신 프롬프트를 fetch |
+| `@chain_prompt` 함수 데코레이터 | ✅ | 항상 현재 프롬프트를 사용해야 하는 함수 |
+| `@chain_prompt` 클래스 데코레이터 | ❌ (init 시 고정) | 프롬프트 변경이 드문 성능 중심 에이전트 |
 
 ## Configuration
 
 ```python
 import aops
 
-# Polling every 30 seconds
+# 30초마다 polling
 aops.init(api_key="aops_...", poll_interval=30)
 
-# Disable polling
+# polling 비활성화
 aops.init(api_key="aops_...", poll_interval=0)
 ```
 
-Or via environment variable:
+환경 변수로도 설정 가능:
 
 ```bash
 AGENTOPS_POLL_INTERVAL=30  # seconds; 0 = disable
@@ -41,16 +38,35 @@ AGENTOPS_POLL_INTERVAL=30  # seconds; 0 = disable
 
 ## Examples
 
-### `pull()` — always reflects latest prompt
+### `pull()` — 항상 최신 프롬프트
 
 ```python
-from aops.langchain import pull
+from aops import pull
 
-# Each call reads from cache; cache is refreshed by the background poller
-prompt = pull("my-agent/my-chain")
+# 캐시에서 읽고, 백그라운드 poller가 변경 시 캐시를 갱신
+system_prompt = pull("my-agent/my-chain")  # str 반환
 ```
 
-### Function decorator — live updates per call
+### 라이브 변경 감지 루프
+
+```python
+import time
+from aops import pull
+
+last = None
+while True:
+    current = pull("my-agent/my-chain")
+    if last is None:
+        print(f"[INIT]    {current[:60]}...")
+    elif current != last:
+        print(f"[UPDATED] {current[:60]}...")
+    else:
+        print(f"[OK]      (no change)")
+    last = current
+    time.sleep(5)
+```
+
+### LangChain — 함수 데코레이터 (라이브 업데이트 반영)
 
 ```python
 from aops.langchain import chain_prompt
@@ -58,7 +74,7 @@ from langchain_core.prompts import SystemMessagePromptTemplate
 
 @chain_prompt("my-agent", "my-chain")
 def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
-    # prompt is always up-to-date (fetched from cache on each call)
+    # prompt는 항상 최신 (캐시에서 매 호출마다 읽음)
     chain = ChatPromptTemplate.from_messages([
         prompt,
         HumanMessagePromptTemplate.from_template("{user_input}"),
@@ -66,23 +82,23 @@ def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
     return chain.invoke({"user_input": user_input})
 ```
 
-### Class decorator — fixed prompt (by design)
+### LangChain — 클래스 데코레이터 (고정 프롬프트)
 
 ```python
 @chain_prompt("my-agent", "my-chain")
 class MyAgent:
     def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
-        # prompt is fixed at construction time
+        # 인스턴스화 시점에 프롬프트 고정
         self.chain = ChatPromptTemplate.from_messages([...]) | ChatOpenAI()
 
     def run(self, user_input: str) -> str:
         return self.chain.invoke({"user_input": user_input})
 
-agent = MyAgent()  # prompt baked in here
+agent = MyAgent()  # 프롬프트가 여기서 고정됨
 ```
 
-To apply a prompt update with the class decorator, re-instantiate:
+프롬프트 업데이트를 반영하려면 재인스턴스화:
 
 ```python
-agent = MyAgent()  # re-instantiate to pick up the latest prompt
+agent = MyAgent()
 ```
