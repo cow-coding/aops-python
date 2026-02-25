@@ -19,10 +19,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI
 
-aops.init(api_key=os.getenv("AGENTOPS_API_KEY"))
+aops.init(api_key=os.getenv("AGENTOPS_API_KEY"), agent="test-agent")
 
-AGENT_NAME = "test-agent"
-CHAIN_NAME = "user-input"
 MODEL = "gpt-4o-mini"
 
 llm = ChatOpenAI(model=MODEL)
@@ -32,7 +30,7 @@ llm = ChatOpenAI(model=MODEL)
 
 def example_pull():
     print("=== Example 1: aops.langchain.pull() → LangChain chain ===")
-    prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
+    prompt = pull("user-input")
 
     chain = (
         ChatPromptTemplate.from_messages([
@@ -51,7 +49,7 @@ def example_pull():
 # Reads the prompt from cache on every call and builds the chain fresh.
 # Live updates are reflected automatically.
 
-@chain_prompt(AGENT_NAME, CHAIN_NAME)
+@chain_prompt("user-input")
 def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
     return (
         ChatPromptTemplate.from_messages([
@@ -73,7 +71,7 @@ def example_function_decorator():
 # Best for performance-sensitive agents where the prompt changes infrequently.
 # To pick up a prompt update, re-instantiate the class.
 
-@chain_prompt(AGENT_NAME, CHAIN_NAME)
+@chain_prompt("user-input")
 class WeatherAgent:
     def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
         self.chain = (

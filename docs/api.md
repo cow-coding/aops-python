@@ -1,15 +1,44 @@
 # API Reference
 
-## `pull(ref, *, version=None)` — `from aops import pull`
+## `aops.init()`
 
-Fetches a chain from AOps and returns it as a raw **`str`**.
-Works with any LLM SDK (OpenAI, Anthropic, etc.) out of the box.
+Configure the AgentOps connection. Call once at startup.
 
 ```python
+import aops
+
+aops.init(api_key="aops_...", agent="my-agent")
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `api_key` | `str` | `AGENTOPS_API_KEY` env | API key (host is parsed from it) |
+| `agent` | `str` | `AGENTOPS_AGENT` env | Default agent name for `pull()` calls |
+| `base_url` | `str` | parsed from key | Override the host embedded in the key |
+| `cache_ttl` | `int` | `300` | Prompt cache TTL in seconds (`0` = no cache) |
+| `poll_interval` | `int` | `60` | Polling interval in seconds (`0` = disable) |
+
+---
+
+## `pull(chain_name, *, version=None)` — `from aops import pull`
+
+Fetches a chain and returns it as a raw **`str`**.
+Works with any LLM SDK (OpenAI, Anthropic, etc.) out of the box.
+
+The agent name is resolved in this order:
+1. Explicit `"agent-name/chain-name"` ref passed as `chain_name`
+2. Agent set in `aops.init(agent="my-agent")`
+3. `AGENTOPS_AGENT` environment variable
+
+```python
+import aops
 from aops import pull
 
-system_prompt = pull("my-agent/my-chain")           # latest version
-system_prompt = pull("my-agent/my-chain", version=2)  # pinned version
+aops.init(api_key="aops_...", agent="my-agent")
+
+system_prompt = pull("my-chain")            # uses agent from init()
+system_prompt = pull("my-chain", version=2) # pinned version
+system_prompt = pull("other-agent/my-chain") # explicit cross-agent ref
 ```
 
 The chain's `persona` and `content` are merged into a single string:
@@ -53,16 +82,19 @@ message = client.messages.create(
 
 ---
 
-## `pull(ref, *, version=None)` — `from aops.langchain import pull`
+## `pull(chain_name, *, version=None)` — `from aops.langchain import pull`
 
-Fetches a chain from AOps and returns it as a **`SystemMessagePromptTemplate`**.
-Can be used directly in LangChain chain composition.
+Fetches a chain and returns it as a **`SystemMessagePromptTemplate`**.
+Agent name resolution is identical to the top-level `pull()`.
 
 ```python
+import aops
 from aops.langchain import pull
 
-prompt = pull("my-agent/my-chain")           # latest version
-prompt = pull("my-agent/my-chain", version=2)  # pinned version
+aops.init(api_key="aops_...", agent="my-agent")
+
+prompt = pull("my-chain")            # latest version
+prompt = pull("my-chain", version=2) # pinned version
 ```
 
 > Requires `aops[langchain]` extra: `pip install "aops[langchain]"`
@@ -72,9 +104,10 @@ prompt = pull("my-agent/my-chain", version=2)  # pinned version
 
 ---
 
-## `@chain_prompt(agent_name, chain_name, *, version=None)`
+## `@chain_prompt(chain_name, *, version=None)`
 
 Decorator that fetches the prompt and injects it as the first argument.
+Agent name resolution is identical to `pull()`.
 
 > Requires `aops[langchain]` extra: `pip install "aops[langchain]"`
 
@@ -84,10 +117,13 @@ Reads the prompt from cache on every call and builds the chain fresh.
 Live updates are reflected automatically.
 
 ```python
+import aops
 from aops.langchain import chain_prompt
 from langchain_core.prompts import SystemMessagePromptTemplate
 
-@chain_prompt("my-agent", "my-chain")
+aops.init(api_key="aops_...", agent="my-agent")
+
+@chain_prompt("my-chain")
 def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
     return (
         ChatPromptTemplate.from_messages([
@@ -107,7 +143,7 @@ Fetches the prompt once at `__init__` and bakes it into the chain.
 Best for performance-sensitive agents where the prompt changes infrequently.
 
 ```python
-@chain_prompt("my-agent", "my-chain")
+@chain_prompt("my-chain")
 class MyAgent:
     def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
         self.chain = (

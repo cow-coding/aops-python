@@ -20,9 +20,8 @@ load_dotenv()
 import aops
 from aops import pull
 
-aops.init(api_key=os.getenv("AGENTOPS_API_KEY"), poll_interval=10)  # 10s for demo
+aops.init(api_key=os.getenv("AGENTOPS_API_KEY"), agent="test-agent", poll_interval=10)  # 10s for demo
 
-AGENT_NAME = "test-agent"
 CHAIN_NAME = "user-input"
 
 
@@ -37,7 +36,7 @@ def example_live_update_pull():
     last = None
     while True:
         try:
-            current = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
+            current = pull(CHAIN_NAME)
             preview = textwrap.shorten(current, width=80, placeholder="...")
             if last is None:
                 print(f"[INIT]    {preview}")
@@ -63,7 +62,7 @@ def example_live_update_decorator():
 
     llm = ChatOpenAI(model="gpt-4o-mini")
 
-    @chain_prompt(AGENT_NAME, CHAIN_NAME)
+    @chain_prompt(CHAIN_NAME)
     def answer(prompt, user_input: str) -> str:
         return (
             ChatPromptTemplate.from_messages([
@@ -81,7 +80,7 @@ def example_live_update_decorator():
     last = None
     while True:
         try:
-            current = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
+            current = pull(CHAIN_NAME)
             if last is None:
                 print(f"[INIT]    {textwrap.shorten(current, width=60, placeholder='...')}")
             elif current != last:

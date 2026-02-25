@@ -16,12 +16,10 @@ load_dotenv()
 import aops
 from aops import pull
 
-aops.init(api_key=os.getenv("AGENTOPS_API_KEY"))
+aops.init(api_key=os.getenv("AGENTOPS_API_KEY"), agent="test-agent")
 
 from openai import OpenAI
 
-AGENT_NAME = "test-agent"
-CHAIN_NAME = "user-input"
 MODEL = "gpt-4o-mini"
 
 client = OpenAI()
@@ -31,7 +29,7 @@ client = OpenAI()
 
 def example_basic():
     print("=== Example 1: raw pull() + OpenAI ===")
-    system_prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
+    system_prompt = pull("user-input")
 
     response = client.chat.completions.create(
         model=MODEL,
@@ -47,7 +45,7 @@ def example_basic():
 
 def example_pinned_version():
     print("\n=== Example 2: pull(version=1) + OpenAI ===")
-    system_prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}", version=1)
+    system_prompt = pull("user-input", version=1)
 
     response = client.chat.completions.create(
         model=MODEL,

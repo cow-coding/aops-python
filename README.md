@@ -28,9 +28,9 @@ import aops
 from aops import pull
 from openai import OpenAI
 
-aops.init(api_key="aops_...")
+aops.init(api_key="aops_...", agent="my-agent")
 
-system_prompt = pull("my-agent/my-chain")  # str 반환
+system_prompt = pull("my-chain")  # agent resolved from init()
 
 client = OpenAI()
 response = client.chat.completions.create(
@@ -50,9 +50,9 @@ import aops
 from aops import pull
 from anthropic import Anthropic
 
-aops.init(api_key="aops_...")
+aops.init(api_key="aops_...", agent="my-agent")
 
-system_prompt = pull("my-agent/my-chain")  # str 반환
+system_prompt = pull("my-chain")  # agent resolved from init()
 
 client = Anthropic()
 message = client.messages.create(
@@ -73,9 +73,9 @@ from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplat
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 
-aops.init(api_key="aops_...")
+aops.init(api_key="aops_...", agent="my-agent")
 
-prompt = pull("my-agent/my-chain")  # SystemMessagePromptTemplate 반환
+prompt = pull("my-chain")  # agent resolved from init()
 
 chain = (
     ChatPromptTemplate.from_messages([

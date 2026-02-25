@@ -16,12 +16,10 @@ load_dotenv()
 import aops
 from aops import pull
 
-aops.init(api_key=os.getenv("AGENTOPS_API_KEY"))
+aops.init(api_key=os.getenv("AGENTOPS_API_KEY"), agent="test-agent")
 
 from anthropic import Anthropic
 
-AGENT_NAME = "test-agent"
-CHAIN_NAME = "user-input"
 MODEL = "claude-haiku-4-5-20251001"
 
 client = Anthropic()
@@ -31,7 +29,7 @@ client = Anthropic()
 
 def example_basic():
     print("=== Example 1: raw pull() + Anthropic ===")
-    system_prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}")
+    system_prompt = pull("user-input")
 
     message = client.messages.create(
         model=MODEL,
@@ -48,7 +46,7 @@ def example_basic():
 
 def example_pinned_version():
     print("\n=== Example 2: pull(version=1) + Anthropic ===")
-    system_prompt = pull(f"{AGENT_NAME}/{CHAIN_NAME}", version=1)
+    system_prompt = pull("user-input", version=1)
 
     message = client.messages.create(
         model=MODEL,

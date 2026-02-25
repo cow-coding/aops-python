@@ -25,10 +25,10 @@ UI are reflected in your running agent within one poll cycle.
 import aops
 
 # Poll every 30 seconds
-aops.init(api_key="aops_...", poll_interval=30)
+aops.init(api_key="aops_...", agent="my-agent", poll_interval=30)
 
 # Disable polling
-aops.init(api_key="aops_...", poll_interval=0)
+aops.init(api_key="aops_...", agent="my-agent", poll_interval=0)
 ```
 
 Or via environment variable:
@@ -42,10 +42,13 @@ AGENTOPS_POLL_INTERVAL=30  # seconds; 0 = disable
 ### `pull()` — always reflects the latest prompt
 
 ```python
+import aops
 from aops import pull
 
+aops.init(api_key="aops_...", agent="my-agent")
+
 # Reads from cache; the background poller refreshes the cache on change
-system_prompt = pull("my-agent/my-chain")  # returns str
+system_prompt = pull("my-chain")  # returns str
 ```
 
 ### Live change detection loop
@@ -56,7 +59,7 @@ from aops import pull
 
 last = None
 while True:
-    current = pull("my-agent/my-chain")
+    current = pull("my-chain")
     if last is None:
         print(f"[INIT]    {current[:60]}...")
     elif current != last:
@@ -73,7 +76,7 @@ while True:
 from aops.langchain import chain_prompt
 from langchain_core.prompts import SystemMessagePromptTemplate
 
-@chain_prompt("my-agent", "my-chain")
+@chain_prompt("my-chain")
 def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
     # prompt is always up-to-date (read from cache on each call)
     chain = ChatPromptTemplate.from_messages([
@@ -86,7 +89,7 @@ def answer(prompt: SystemMessagePromptTemplate, user_input: str) -> str:
 ### LangChain — class decorator (fixed prompt)
 
 ```python
-@chain_prompt("my-agent", "my-chain")
+@chain_prompt("my-chain")
 class MyAgent:
     def __init__(self, prompt: SystemMessagePromptTemplate) -> None:
         # prompt is fixed at construction time
