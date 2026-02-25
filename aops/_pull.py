@@ -2,11 +2,11 @@ from aops._client import AopsClient
 from aops._config import get_config
 
 
-def format_prompt(persona: str, content: str) -> str:
+def format_prompt(persona: str | None, content: str) -> str:
     """Merge persona and content into a raw prompt string.
 
     Args:
-        persona: Agent persona text. May be empty.
+        persona: Agent persona text. May be empty or None.
         content: Chain content text.
 
     Returns:
@@ -16,6 +16,27 @@ def format_prompt(persona: str, content: str) -> str:
     if persona:
         return f"{persona}\n\n{content}"
     return content
+
+
+def _fetch_chain(
+    chain_name: str,
+    version: int | None,
+    client: AopsClient,
+) -> tuple[str | None, str]:
+    """Resolve ref, fetch from backend, and return (persona, content).
+
+    Shared by both the raw ``pull()`` and ``aops.langchain.pull()``.
+    """
+    agent_name, resolved_chain = _resolve_ref(chain_name)
+
+    agent = client.get_agent_by_name(agent_name)
+    chain = client.get_chain_by_name(agent.id, resolved_chain)
+
+    if version is not None:
+        v = client.get_chain_version(agent.id, chain.id, version)
+        return v.persona, v.content
+
+    return chain.persona, chain.content
 
 
 def pull(
@@ -55,17 +76,9 @@ def pull(
         # Full ref also accepted (e.g. for cross-agent access):
         system_prompt = pull("other-agent/my-chain")
     """
-    agent_name, resolved_chain = _resolve_ref(chain_name)
-
     c = client or AopsClient()
-    agent = c.get_agent_by_name(agent_name)
-    chain = c.get_chain_by_name(agent.id, resolved_chain)
-
-    if version is not None:
-        v = c.get_chain_version(agent.id, chain.id, version)
-        return format_prompt(v.persona, v.content)
-
-    return format_prompt(chain.persona, chain.content)
+    persona, content = _fetch_chain(chain_name, version, c)
+    return format_prompt(persona, content)
 
 
 def _resolve_ref(chain_name: str) -> tuple[str, str]:

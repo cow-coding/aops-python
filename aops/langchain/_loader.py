@@ -5,10 +5,10 @@ from typing import Callable
 from langchain_core.prompts import SystemMessagePromptTemplate
 
 from aops._client import AopsClient
-from aops._pull import _resolve_ref
+from aops._pull import _fetch_chain
 
 
-def _to_system_prompt(persona: str, content: str) -> SystemMessagePromptTemplate:
+def _to_system_prompt(persona: str | None, content: str) -> SystemMessagePromptTemplate:
     """Convert AgentOps chain fields into a SystemMessagePromptTemplate.
 
     Both ``persona`` and ``content`` are agent-authored system-level instructions,
@@ -25,8 +25,11 @@ def _to_system_prompt(persona: str, content: str) -> SystemMessagePromptTemplate
     e.g. ``"Answer in {language}"``.
     To include a literal brace in content use double braces: ``{{`` or ``}}``.
     """
-    persona_escaped = persona.replace("{", "{{").replace("}", "}}")
-    system_text = f"# Persona\n{persona_escaped}\n\n# Content\n{content}"
+    if persona:
+        persona_escaped = persona.replace("{", "{{").replace("}", "}}")
+        system_text = f"# Persona\n{persona_escaped}\n\n# Content\n{content}"
+    else:
+        system_text = content
     return SystemMessagePromptTemplate.from_template(system_text)
 
 
@@ -68,17 +71,9 @@ def pull(
         chain = prompt | ChatOpenAI() | StrOutputParser()
         chain.invoke({"topic": "billing"})
     """
-    agent_name, resolved_chain = _resolve_ref(chain_name)
     c = client or AopsClient()
-
-    agent = c.get_agent_by_name(agent_name)
-    chain = c.get_chain_by_name(agent.id, resolved_chain)
-
-    if version is not None:
-        v = c.get_chain_version(agent.id, chain.id, version)
-        return _to_system_prompt(v.persona, v.content)
-
-    return _to_system_prompt(chain.persona, chain.content)
+    persona, content = _fetch_chain(chain_name, version, c)
+    return _to_system_prompt(persona, content)
 
 
 def chain_prompt(

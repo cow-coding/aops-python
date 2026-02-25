@@ -1,6 +1,5 @@
 import logging
 import threading
-import time
 import uuid
 
 import httpx
@@ -49,6 +48,8 @@ class AopsClient:
         self._poll_interval = interval
         self._poll_targets: dict[str, tuple[uuid.UUID, uuid.UUID]] = {}  # cache_key → (agent_id, chain_id)
         self._poll_lock = threading.Lock()
+        self._http = httpx.Client()
+        self._stop_event = threading.Event()
 
         if self._poll_interval > 0:
             t = threading.Thread(target=self._poll_loop, daemon=True, name="aops-poller")
@@ -63,13 +64,23 @@ class AopsClient:
             return {"X-API-Key": self._api_key}
         return {}
 
+    def close(self) -> None:
+        """Shut down the background poller and close the HTTP connection pool."""
+        self._stop_event.set()
+        self._http.close()
+
+    def __enter__(self) -> "AopsClient":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def _get(self, path: str) -> list | dict:
         url = f"{self._api_base}{path}"
         try:
-            with httpx.Client() as client:
-                response = client.get(url, headers=self._headers())
-                response.raise_for_status()
-                return response.json()
+            response = self._http.get(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
         except httpx.ConnectError as exc:
             raise AopsConnectionError(
                 f"Cannot reach AgentOps at '{self._api_base}'. "
@@ -96,8 +107,7 @@ class AopsClient:
     # ------------------------------------------------------------------
 
     def _poll_loop(self) -> None:
-        while True:
-            time.sleep(self._poll_interval)
+        while not self._stop_event.wait(timeout=self._poll_interval):
             self._refresh_chains()
 
     def _refresh_chains(self) -> None:
