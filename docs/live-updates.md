@@ -106,3 +106,26 @@ To apply a prompt update with the class decorator, re-instantiate:
 ```python
 agent = MyAgent()
 ```
+
+## Stopping the Poller
+
+The polling thread is a daemon thread and exits automatically when the process ends.
+For short-lived scripts or tests where you need to stop it explicitly, call `close()` on the client:
+
+```python
+from aops._client import AopsClient
+
+with AopsClient(api_key="aops_...", agent="my-agent", poll_interval=30) as client:
+    prompt = pull("my-chain", client=client)
+    # ... do work ...
+# poller stops and HTTP pool closes here
+
+# Or manually:
+client = AopsClient(api_key="aops_...", agent="my-agent")
+try:
+    prompt = pull("my-chain", client=client)
+finally:
+    client.close()
+```
+
+> **Note:** The global client created by `aops.init()` is a daemon thread and does not need explicit shutdown in normal application usage.

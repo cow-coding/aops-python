@@ -165,3 +165,31 @@ result = agent.run(user_input="Hello!")
 > **Note:** The class decorator bakes the prompt at instantiation time.
 > To reflect live updates, use `pull()` or the function decorator instead.
 > See [Live Updates](./live-updates.md).
+
+---
+
+## `AopsClient`
+
+Low-level HTTP client. Normally you don't need to instantiate it directly — `pull()` and decorators use the global client configured by `aops.init()`.
+
+Useful when you need explicit lifecycle control (e.g. short-lived scripts, tests, or multiple isolated clients):
+
+```python
+from aops._client import AopsClient
+
+# Context manager — closes the HTTP pool and stops the poller on exit
+with AopsClient(api_key="aops_...", poll_interval=0) as client:
+    from aops import pull
+    prompt = pull("my-chain", client=client)
+
+# Manual close
+client = AopsClient(api_key="aops_...")
+try:
+    prompt = pull("my-chain", client=client)
+finally:
+    client.close()
+```
+
+### `client.close()`
+
+Signals the background polling thread to stop and closes the underlying HTTP connection pool. Safe to call multiple times.

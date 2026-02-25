@@ -19,6 +19,7 @@ load_dotenv()
 
 import aops
 from aops import pull
+from aops._config import get_config
 
 aops.init(api_key=os.getenv("AGENTOPS_API_KEY"), agent="test-agent", poll_interval=10)  # 10s for demo
 
@@ -29,7 +30,7 @@ CHAIN_NAME = "user-input"
 # pull() reads from cache; the background poller refreshes the cache on change.
 
 def example_live_update_pull():
-    interval = aops._config._config.poll_interval
+    interval = get_config().poll_interval
     print(f"=== Example 1: Live update (pull) — polling every {interval}s ===")
     print("Edit the prompt in the AOps web UI. [UPDATED] will appear when a change is detected.\n")
 
@@ -73,7 +74,7 @@ def example_live_update_decorator():
             | StrOutputParser()
         ).invoke({"user_input": user_input})
 
-    interval = aops._config._config.poll_interval
+    interval = get_config().poll_interval
     print(f"\n=== Example 2: Live update (@chain_prompt) — polling every {interval}s ===")
     print("Edit the prompt in the AOps web UI. [UPDATED] will appear when a change is detected.\n")
 
