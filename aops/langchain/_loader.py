@@ -72,7 +72,7 @@ def pull(
         chain.invoke({"topic": "billing"})
     """
     c = client or AopsClient()
-    persona, content = _fetch_chain(chain_name, version, c)
+    _agent_id, _chain_name, persona, content = _fetch_chain(chain_name, version, c)
     return _to_system_prompt(persona, content)
 
 
