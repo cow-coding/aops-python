@@ -20,10 +20,12 @@ from aops._exceptions import (
 )
 from aops._keys import generate_key, parse_key
 from aops._pull import pull
+from aops._run import run
 
 __all__ = [
     "init",
     "pull",
+    "run",
     "AopsClient",
     "generate_key",
     "parse_key",

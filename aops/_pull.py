@@ -1,3 +1,6 @@
+import uuid
+from datetime import datetime, timezone
+
 from aops._client import AopsClient
 from aops._config import get_config
 
@@ -22,8 +25,8 @@ def _fetch_chain(
     chain_name: str,
     version: int | None,
     client: AopsClient,
-) -> tuple[str | None, str]:
-    """Resolve ref, fetch from backend, and return (persona, content).
+) -> tuple[uuid.UUID, str, str | None, str]:
+    """Resolve ref, fetch from backend, and return (agent_id, resolved_chain_name, persona, content).
 
     Shared by both the raw ``pull()`` and ``aops.langchain.pull()``.
     """
@@ -34,9 +37,9 @@ def _fetch_chain(
 
     if version is not None:
         v = client.get_chain_version(agent.id, chain.id, version)
-        return v.persona, v.content
+        return agent.id, resolved_chain, v.persona, v.content
 
-    return chain.persona, chain.content
+    return agent.id, resolved_chain, chain.persona, chain.content
 
 
 def pull(
@@ -76,8 +79,19 @@ def pull(
         # Full ref also accepted (e.g. for cross-agent access):
         system_prompt = pull("other-agent/my-chain")
     """
+    from aops._run import get_current_run
+
     c = client or AopsClient()
-    persona, content = _fetch_chain(chain_name, version, c)
+    called_at = datetime.now(timezone.utc)
+    agent_id, resolved_chain, persona, content = _fetch_chain(chain_name, version, c)
+    latency_ms = int((datetime.now(timezone.utc) - called_at).total_seconds() * 1000)
+
+    ctx = get_current_run()
+    if ctx is not None:
+        if ctx.agent_id is None:
+            ctx.agent_id = agent_id
+        ctx.record_call(chain_name=resolved_chain, called_at=called_at, latency_ms=latency_ms)
+
     return format_prompt(persona, content)
 
 

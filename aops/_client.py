@@ -166,6 +166,38 @@ class AopsClient:
             f"Available chains: {[c.name for c in chains] or '(none)'}"
         )
 
+    def post_run(self, agent_id: uuid.UUID, ctx: "RunContext") -> None:  # noqa: F821
+        """POST a completed run to the backend for tracing.
+
+        Args:
+            agent_id: UUID of the agent this run belongs to.
+            ctx:      Completed :class:`~aops._run.RunContext`.
+        """
+        payload = {
+            "started_at": ctx.started_at.isoformat(),
+            "ended_at": ctx.ended_at.isoformat() if ctx.ended_at else None,
+            "chain_calls": [
+                {
+                    "chain_name": c.chain_name,
+                    "called_at": c.called_at.isoformat(),
+                    "latency_ms": c.latency_ms,
+                }
+                for c in ctx.chain_calls
+            ],
+        }
+        url = f"{self._api_base}/agents/{agent_id}/runs"
+        try:
+            response = self._http.post(url, json=payload, headers=self._headers())
+            response.raise_for_status()
+        except httpx.ConnectError as exc:
+            raise AopsConnectionError(
+                f"Cannot reach AgentOps at '{self._api_base}'."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise AopsConnectionError(
+                f"AgentOps returned {exc.response.status_code} when posting run."
+            ) from exc
+
     def get_chain_version(
         self, agent_id: uuid.UUID, chain_id: uuid.UUID, version_number: int
     ) -> ChainVersionModel:
