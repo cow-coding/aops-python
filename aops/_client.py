@@ -48,7 +48,7 @@ class AopsClient:
         self._poll_interval = interval
         self._poll_targets: dict[str, tuple[uuid.UUID, uuid.UUID]] = {}  # cache_key → (agent_id, chain_id)
         self._poll_lock = threading.Lock()
-        self._http = httpx.Client()
+        self._http = httpx.Client(timeout=httpx.Timeout(10.0))
         self._stop_event = threading.Event()
 
         if self._poll_interval > 0:
