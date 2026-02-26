@@ -3,9 +3,9 @@
 [![PyPI](https://img.shields.io/pypi/v/aops)](https://pypi.org/project/aops/)
 [![Python](https://img.shields.io/pypi/pyversions/aops)](https://pypi.org/project/aops/)
 
-Python SDK for [AOps](https://github.com/cow-coding/aops) — prompt version management platform.
+Python SDK for [AOps](https://github.com/cow-coding/aops) — prompt version management and agent tracing platform.
 
-Provides a framework-agnostic raw `pull()` that works with any LLM SDK, as well as a LangChain integration.
+Provides a framework-agnostic `pull()` that works with any LLM SDK, a `run()` context manager for execution tracing, and a LangChain integration.
 
 ## Installation
 
@@ -13,7 +13,7 @@ Provides a framework-agnostic raw `pull()` that works with any LLM SDK, as well 
 pip install aops
 ```
 
-LangChain 통합이 필요한 경우:
+With LangChain integration:
 
 ```bash
 pip install "aops[langchain]"
@@ -21,7 +21,7 @@ pip install "aops[langchain]"
 
 ## Quick Start
 
-### OpenAI SDK
+### Pull a prompt
 
 ```python
 import aops
@@ -43,6 +43,29 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+### Record execution traces
+
+Wrap your agent logic in `aops.run()` to automatically record which chains were called, in what order, and with what latency. The data is posted to the AOps backend and visualized in the **Flow** tab.
+
+```python
+import aops
+
+aops.init(api_key="aops_...", agent="my-agent")
+
+# Chains pulled outside run() are not traced (good for shared system prompts)
+system_prompt = aops.pull("system")
+
+def handle(inquiry: str) -> str:
+    with aops.run():
+        classify_prompt = aops.pull("classify")      # traced
+        category = classify(classify_prompt, inquiry)
+
+        response_prompt = aops.pull(f"respond-{category}")  # traced
+        return respond(system_prompt, response_prompt, inquiry)
+```
+
+On block exit, the SDK posts `started_at`, `ended_at`, and the ordered list of chain calls to `POST /agents/:id/runs`. If the backend is unreachable, a warning is logged and the exception is suppressed — your agent is never interrupted by a tracing failure.
+
 ### Anthropic SDK
 
 ```python
@@ -52,7 +75,7 @@ from anthropic import Anthropic
 
 aops.init(api_key="aops_...", agent="my-agent")
 
-system_prompt = pull("my-chain")  # agent resolved from init()
+system_prompt = pull("my-chain")
 
 client = Anthropic()
 message = client.messages.create(
@@ -75,7 +98,7 @@ from langchain_openai import ChatOpenAI
 
 aops.init(api_key="aops_...", agent="my-agent")
 
-prompt = pull("my-chain")  # agent resolved from init()
+prompt = pull("my-chain")
 
 chain = (
     ChatPromptTemplate.from_messages([
@@ -102,14 +125,18 @@ examples/
   openai_example.py     raw pull() + OpenAI SDK
   anthropic_example.py  raw pull() + Anthropic SDK
   langchain_example.py  aops.langchain — pull(), @chain_prompt
-  live_updates.py       백그라운드 polling / 라이브 업데이트 감지
+  live_updates.py       background polling / live update detection
 ```
 
 ## Docs
 
-- [Configuration](docs/configuration.md) — API key, `aops.init()`, environment variables
-- [API Reference](docs/api.md) — `pull()`, `aops.langchain.pull()`, `@chain_prompt`
-- [Live Updates](docs/live-updates.md) — polling, pattern selection guide
+| Guide | Description |
+|-------|-------------|
+| [Configuration](docs/configuration.md) | API key, `aops.init()`, environment variables |
+| [API Reference](docs/api.md) | `pull()`, `aops.langchain.pull()`, `@chain_prompt` |
+| [Live Updates](docs/live-updates.md) | Polling, pattern selection guide |
+| [Run Tracing](docs/tracing.md) | `aops.run()`, how traces are recorded and posted, async safety |
+| [LangChain Compatibility](docs/langchain.md) | Class-based vs LCEL, `RunnableLambda` lazy-pull pattern |
 
 ## License
 
