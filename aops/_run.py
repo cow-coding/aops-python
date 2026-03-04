@@ -26,6 +26,8 @@ class _ChainCall:
     chain_name: str
     called_at: datetime
     latency_ms: int | None = None
+    input: str | None = None
+    output: str | None = None
 
 
 @dataclass
@@ -47,8 +49,22 @@ class RunContext:
             _ChainCall(chain_name=chain_name, called_at=called_at, latency_ms=latency_ms)
         )
 
+    def update_last_io(
+        self,
+        chain_name: str,
+        input: str | None,
+        output: str | None,
+    ) -> None:
+        """Update input/output on the most recent call for the given chain_name."""
+        for call in reversed(self.chain_calls):
+            if call.chain_name == chain_name:
+                call.input = input
+                call.output = output
+                return
+
 
 _current_run: ContextVar[RunContext | None] = ContextVar("_current_run", default=None)
+_active_chain: ContextVar[str | None] = ContextVar("_active_chain", default=None)
 
 
 def get_current_run() -> RunContext | None:

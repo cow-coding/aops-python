@@ -79,7 +79,7 @@ def pull(
         # Full ref also accepted (e.g. for cross-agent access):
         system_prompt = pull("other-agent/my-chain")
     """
-    from aops._run import get_current_run
+    from aops._run import _active_chain, get_current_run
 
     c = client or AopsClient()
     called_at = datetime.now(timezone.utc)
@@ -91,6 +91,8 @@ def pull(
         if ctx.agent_id is None:
             ctx.agent_id = agent_id
         ctx.record_call(chain_name=resolved_chain, called_at=called_at, latency_ms=latency_ms)
+
+    _active_chain.set(resolved_chain)
 
     return format_prompt(persona, content)
 

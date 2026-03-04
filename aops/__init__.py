@@ -11,6 +11,7 @@ Quick start::
 
 from aops._client import AopsClient
 from aops._config import init
+from aops._decorators import trace
 from aops._exceptions import (
     AgentNotFoundError,
     AopsConnectionError,
@@ -21,11 +22,14 @@ from aops._exceptions import (
 from aops._keys import generate_key, parse_key
 from aops._pull import pull
 from aops._run import run
+from aops.openai import wrap
 
 __all__ = [
     "init",
     "pull",
     "run",
+    "trace",
+    "wrap",
     "AopsClient",
     "generate_key",
     "parse_key",
