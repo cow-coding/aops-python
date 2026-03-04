@@ -1,6 +1,6 @@
 # OpenAI Integration
 
-Use `aops.wrap()` to automatically capture LLM inputs/outputs when using the OpenAI Python SDK.
+Use `aops.wrap()` to automatically capture LLM output when using the OpenAI Python SDK.
 
 > **Note**: `aops.wrap()` supports `openai.OpenAI` (sync) only. For async usage, use [`AopsCallbackHandler`](langchain.md) with LangChain.
 
@@ -16,12 +16,12 @@ aops.init(api_key="aops_...", agent="my-agent")
 client = wrap(openai.OpenAI())
 
 with aops.run():
-    prompt = aops.pull("my-chain")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": prompt},
-            {"role": "user", "content": "Hello!"},
+            {"role": "user", "content": user_input},
         ],
     )
 ```
@@ -32,43 +32,43 @@ with aops.run():
 pip install aops openai
 ```
 
-## Usage
+## How It Works
 
-### wrap()
+### Input
 
-`aops.wrap(client)` returns a proxy that intercepts `chat.completions.create()`:
+`input` is recorded at `pull()` time when `variables` are passed — the rendered prompt
+(chain instructions with placeholders substituted):
 
 ```python
-from aops import wrap
-import openai
-
-client = wrap(openai.OpenAI())
+prompt = aops.pull("classify", variables={"inquiry": user_input})
+# → input recorded: full rendered prompt including user_input
 ```
 
-The proxy captures:
-- `input`: serialized `messages` list (`[role] content` format)
-- `output`: `choices[0].message.content`
+Without `variables`, `input` stays `None`.
 
-These are stored on the most recent `pull()` call within the active `aops.run()` block.
+### Output
 
-### Example
+`wrap()` returns a proxy that intercepts `chat.completions.create()` and records
+`choices[0].message.content` as `output` on the active chain call.
 
 ```python
+client = wrap(openai.OpenAI())
+
 with aops.run():
-    prompt = aops.pull("classifier")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": prompt},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": user_input},
         ],
     )
-    print(response.choices[0].message.content)
+    # output: response.choices[0].message.content recorded automatically
 ```
 
 ## Notes
 
-- Only `chat.completions.create()` is intercepted. Other OpenAI endpoints pass through unchanged.
+- Only `chat.completions.create()` is intercepted. Other endpoints pass through unchanged.
 - Passing `openai.AsyncOpenAI()` to `wrap()` raises a `TypeError` — use `AopsCallbackHandler` for async workflows.
 - If no `aops.run()` block is active, the proxy behaves identically to the unwrapped client.
 - The wrapped client delegates all other attributes (e.g., `client.models`, `client.files`) to the original client.

@@ -62,11 +62,21 @@ with aops.run():
 
 ## Capturing LLM Input / Output
 
-Choose the integration that fits your stack. All three work with the same `aops.run()` context.
+**Input** is captured at `pull()` time by passing `variables`. **Output** is captured after the LLM responds via your chosen integration.
+
+### Step 1 — Pass `variables` to `pull()`
+
+```python
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input = rendered prompt (chain instructions + substituted user_input)
+```
+
+### Step 2 — Capture output
+
+Choose the integration that fits your stack.
 
 ### Option A — LangChain / LCEL (`AopsCallbackHandler`)
-
-Automatically captures every LLM call inside the run block. Works with any LangChain-compatible model.
 
 ```python
 from aops.langchain import AopsCallbackHandler
@@ -77,17 +87,12 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 with aops.run():
-    prompt = aops.pull("classify")
-    result = llm.invoke([
-        SystemMessage(content=prompt),
-        HumanMessage(content=user_input),
-    ])
-    # input + output automatically recorded on the "classify" chain call
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
+    # output recorded automatically by handler
 ```
 
 ### Option B — OpenAI SDK (`wrap()`)
-
-Wraps the sync OpenAI client to intercept `chat.completions.create()`.
 
 ```python
 import openai
@@ -96,31 +101,28 @@ from aops import wrap
 client = wrap(openai.OpenAI())
 
 with aops.run():
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_input},
-        ],
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
     )
-    # input + output automatically recorded
+    # output recorded automatically by proxy
 ```
 
 > `wrap()` supports `openai.OpenAI` (sync) only. For async, use `AopsCallbackHandler`.
 
 ### Option C — Any framework (`@aops.trace` decorator)
 
-Captures the first argument as `input` and the return value as `output`. Works with any LLM library.
+Captures the function's first argument as `input` and return value as `output`. Works with any LLM library.
 
 ```python
 @aops.trace("classify")
 def classify(user_input: str) -> str:
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     return call_any_llm(prompt, user_input)
 
 with aops.run():
-    result = classify(user_input)   # input + output recorded
+    result = classify(user_input)
 ```
 
 Supports `async def` and class methods transparently.

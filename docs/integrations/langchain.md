@@ -1,6 +1,6 @@
 # LangChain Integration
 
-Capture LLM input/output automatically in LangChain chains using `AopsCallbackHandler`.
+Capture LLM output automatically in LangChain chains using `AopsCallbackHandler`.
 
 ## Quick Start
 
@@ -8,6 +8,7 @@ Capture LLM input/output automatically in LangChain chains using `AopsCallbackHa
 import aops
 from aops.langchain import AopsCallbackHandler
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 aops.init(api_key="aops_...", agent="my-agent")
 
@@ -15,8 +16,8 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 with aops.run():
-    prompt = aops.pull("my-chain")
-    result = llm.invoke([HumanMessage(content="Hello")])
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
 ```
 
 ## Installation
@@ -25,28 +26,32 @@ with aops.run():
 pip install "aops[langchain]" langchain-openai
 ```
 
-## Usage
+## How It Works
 
-### Callback Handler
+### Input
 
-`AopsCallbackHandler` hooks into LangChain's callback system to record LLM inputs and outputs.
-Pass it to any LangChain LLM or chain:
+`input` is recorded at `pull()` time when `variables` are passed — the rendered prompt
+(chain instructions with placeholders substituted):
 
 ```python
-from aops.langchain import AopsCallbackHandler
-
-handler = AopsCallbackHandler()
-llm = ChatOpenAI(callbacks=[handler])
+prompt = aops.pull("classify", variables={"inquiry": user_input})
+# → input recorded: full rendered prompt including user_input
 ```
 
-The handler:
-- `on_chat_model_start`: captures the serialized message list as `input`
-- `on_llm_start`: captures the raw prompt string as `input`
-- `on_llm_end`: captures `generations[0][0].text` as `output`
+Without `variables`, `input` stays `None`.
 
-Input/output is written to the most recent `pull()` call in the active `aops.run()` block.
+### Output
 
-### LCEL Example
+`AopsCallbackHandler` hooks into LangChain's callback system via `on_llm_end` and records
+`generations[0][0].text` as `output` on the active chain call.
+
+```python
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(callbacks=[handler])
+# output captured automatically after every llm.invoke()
+```
+
+## LCEL Example
 
 ```python
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
@@ -57,7 +62,7 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 with aops.run():
-    system_prompt = pull("classifier")
+    system_prompt = pull("classifier")  # returns SystemMessagePromptTemplate
 
     chain = (
         ChatPromptTemplate.from_messages([
@@ -69,11 +74,15 @@ with aops.run():
     )
 
     result = chain.invoke({"user_input": "Is this a question?"})
+    # output recorded by handler
 ```
 
-### @chain_prompt Decorator
+> Note: `aops.langchain.pull()` returns a `SystemMessagePromptTemplate`. Template variables
+> in `content` are handled natively by LangChain at `invoke()` time — no `variables=` needed.
 
-Use the existing `@chain_prompt` decorator to inject prompts — combine with `AopsCallbackHandler` for full I/O logging:
+## `@chain_prompt` Decorator
+
+Combine with `AopsCallbackHandler` for full output logging:
 
 ```python
 from aops.langchain import chain_prompt, AopsCallbackHandler
@@ -92,6 +101,6 @@ with aops.run():
 
 ## Notes
 
-- `AopsCallbackHandler` only records I/O when inside an `aops.run()` block.
-- If multiple chains are called in sequence, each `pull()` sets `_active_chain`; the handler writes to the most recent one.
+- `AopsCallbackHandler` only records output when inside an `aops.run()` block.
+- If multiple chains are called in sequence, each `pull()` updates `_active_chain`; the handler writes output to the most recent one.
 - Thread/async safe — uses Python `ContextVar` internally.

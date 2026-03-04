@@ -150,7 +150,8 @@ prompt = pull("classify")
 
 ## Step 7: Add Tracing
 
-Wrap agent logic in `aops.run()` to record execution traces visible in the Flow tab:
+Wrap agent logic in `aops.run()` to record execution traces visible in the Flow tab.
+Pass `variables` to substitute `{placeholder}` tokens in the chain content:
 
 ```python
 import aops
@@ -159,10 +160,10 @@ aops.init(api_key="aops_...", agent="my-agent")
 
 def handle(user_input: str) -> str:
     with aops.run():
-        classify_prompt = aops.pull("classify").replace("{inquiry}", user_input)
+        classify_prompt = aops.pull("classify", variables={"inquiry": user_input})
         category = call_llm(classify_prompt)
 
-        respond_prompt = aops.pull(f"respond-{category}").replace("{inquiry}", user_input)
+        respond_prompt = aops.pull(f"respond-{category}", variables={"inquiry": user_input})
         return call_llm(respond_prompt)
 ```
 
@@ -170,7 +171,8 @@ def handle(user_input: str) -> str:
 
 ## Step 8: Capture LLM Input / Output (optional)
 
-Pick one method based on your LLM library.
+**Input** is automatically recorded at `pull()` time when `variables` are passed (the rendered prompt).
+**Output** is captured by whichever integration you choose below.
 
 ### LangChain — `AopsCallbackHandler`
 
@@ -183,7 +185,8 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 with aops.run():
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input recorded; handler captures output below
     result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
 ```
 
@@ -196,7 +199,8 @@ from aops import wrap
 client = wrap(openai.OpenAI())
 
 with aops.run():
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input recorded; proxy captures output below
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
@@ -208,7 +212,7 @@ with aops.run():
 ```python
 @aops.trace("classify")
 def classify(user_input: str) -> str:
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     return call_any_llm(prompt, user_input)
 
 with aops.run():
@@ -239,13 +243,13 @@ def handle(inquiry: str) -> str:
     system_prompt = aops.pull("system")   # outside run() → not traced
 
     with aops.run():
-        # Classify
-        classify_prompt = aops.pull("classify").replace("{inquiry}", inquiry)
+        # Classify — variables= substitutes {inquiry} and records rendered prompt as input
+        classify_prompt = aops.pull("classify", variables={"inquiry": inquiry})
         raw = call_llm(system_prompt, classify_prompt)
         category = json.loads(raw).get("category", "general")
 
         # Respond
-        respond_prompt = aops.pull(f"respond-{category}").replace("{inquiry}", inquiry)
+        respond_prompt = aops.pull(f"respond-{category}", variables={"inquiry": inquiry})
         return call_llm(system_prompt, respond_prompt)
 
 print(handle("My payment failed twice."))

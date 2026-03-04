@@ -180,10 +180,12 @@ with aops.run():
 
 ---
 
-## Capturing LLM Input / Output with `AopsCallbackHandler`
+## Capturing LLM Output with `AopsCallbackHandler`
 
 `AopsCallbackHandler` is a LangChain `BaseCallbackHandler` that automatically
-records LLM input and output for each chain call inside an `aops.run()` block.
+records the LLM output for each chain call inside an `aops.run()` block.
+
+**Input** is captured at `pull()` time via `variables`. The handler only handles **output**.
 
 ```python
 import aops
@@ -197,21 +199,18 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 with aops.run():
-    prompt = aops.pull("classify")          # sets active chain context
-    result = llm.invoke([
-        SystemMessage(content=prompt),
-        HumanMessage(content=user_input),
-    ])
-    # → input (message list) + output (LLM response) recorded on "classify" call
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input = rendered prompt recorded here
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
+    # ↑ output recorded by handler on llm_end
 ```
 
 ### How It Works
 
-1. `aops.pull("classify")` sets `_active_chain = "classify"` in a `ContextVar`.
-2. `on_chat_model_start` fires before the LLM call → serializes the message list
-   as `[role] content` lines and stores it as pending input.
-3. `on_llm_end` fires after the LLM call → writes `(pending_input, output)` to
-   the most recent `"classify"` call in the active `RunContext`.
+1. `aops.pull("classify", variables={"inquiry": user_input})` renders the prompt,
+   records it as `input`, and sets `_active_chain = "classify"` in a `ContextVar`.
+2. `on_llm_end` fires after the LLM call → writes `generations[0][0].text` as
+   `output` to the most recent `"classify"` call in the active `RunContext`.
 
 ### LCEL Example
 
@@ -229,29 +228,24 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 def build_classify_messages(x: dict) -> list:
-    from aops.langchain import pull
-    system = pull("classify")
-    return ChatPromptTemplate.from_messages([
-        system,
-        HumanMessagePromptTemplate.from_template("{inquiry}"),
-    ]).format_messages(inquiry=x["inquiry"])
+    from aops import pull
+    prompt = pull("classify", variables={"inquiry": x["inquiry"]})
+    return [SystemMessage(content=prompt), HumanMessage(content=x["inquiry"])]
 
 classify_chain = RunnableLambda(build_classify_messages) | llm | StrOutputParser()
 
 with aops.run():
     category = classify_chain.invoke({"inquiry": "My payment failed."})
-    # input + output captured automatically
+    # input recorded at pull() time, output recorded by handler
 ```
 
 ### Hooks
 
 | Hook | Captures |
 |------|----------|
-| `on_chat_model_start` | Serialized message list as `input` (`[role] content` per message) |
-| `on_llm_start` | Raw prompt string as `input` |
 | `on_llm_end` | `generations[0][0].text` as `output` |
 
-- Only records when inside an `aops.run()` block and after a `pull()` call.
+- Only records output when inside an `aops.run()` block and after a `pull()` call.
 - Thread and `asyncio`-safe via `ContextVar`.
 
 > Requires `pip install "aops[langchain]"`. See also [docs/integrations/langchain.md](integrations/langchain.md).

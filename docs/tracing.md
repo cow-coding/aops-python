@@ -173,18 +173,27 @@ called and how often.
 
 ## Capturing LLM Input / Output
 
-By default, `aops.run()` records **which chains were called** and their
-latency, but not what was sent to the LLM or what it returned. To capture
-input/output per chain call, use one of the three methods below.
+By default, `aops.run()` records **which chains were called** and their latency.
+To also capture `input` and `output` per chain call:
 
-All three share the same underlying mechanism: `pull()` sets an `_active_chain`
-ContextVar, and the capture method writes input/output back to the matching
-chain call in the current `RunContext`.
+- **`input`** — recorded at `pull()` time when `variables` are passed: the rendered prompt (chain instructions + substituted values).
+- **`output`** — recorded after the LLM responds, via `AopsCallbackHandler`, `wrap()`, or `@aops.trace`.
 
-### Method A — LangChain `AopsCallbackHandler`
+### Step 1 — Pass `variables` to `pull()`
 
-Attach `AopsCallbackHandler` once to your LLM. It hooks into LangChain's
-native callback system — no other code changes needed.
+```python
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input recorded here: rendered prompt = chain instructions + user_input substituted
+```
+
+Without `variables`, `input` stays `None` — useful for static chains (e.g. a fixed system persona).
+
+### Step 2 — Capture output
+
+Pick one method based on your LLM library.
+
+#### Option A — LangChain `AopsCallbackHandler`
 
 ```python
 import aops
@@ -197,63 +206,48 @@ handler = AopsCallbackHandler()
 llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
 
 with aops.run():
-    prompt = aops.pull("classify")
-    result = llm.invoke([
-        SystemMessage(content=prompt),
-        HumanMessage(content=user_input),
-    ])
-    # input + output automatically recorded on the "classify" call
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
+    # output recorded by handler on llm_end
 ```
 
 > Requires `pip install "aops[langchain]"`. See [docs/integrations/langchain.md](integrations/langchain.md).
 
-### Method B — OpenAI SDK `wrap()`
-
-Wrap the sync `openai.OpenAI` client once. Intercepts `chat.completions.create()`.
+#### Option B — OpenAI SDK `wrap()`
 
 ```python
-import openai
-import aops
+import openai, aops
 from aops import wrap
 
 aops.init(api_key="aops_...", agent="my-agent")
 client = wrap(openai.OpenAI())
 
 with aops.run():
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_input},
-        ],
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
     )
-    # input + output automatically recorded
+    # output recorded by proxy on create()
 ```
 
-> Supports `openai.OpenAI` (sync) only. Pass `openai.AsyncOpenAI` and a `TypeError` is raised.
-> See [docs/integrations/openai.md](integrations/openai.md).
+> Supports `openai.OpenAI` (sync) only. See [docs/integrations/openai.md](integrations/openai.md).
 
-### Method C — `@aops.trace` decorator
+#### Option C — `@aops.trace` decorator
 
-Works with any LLM library. Captures the first meaningful argument as `input`
-and the return value as `output`.
+Captures the function's first argument as `input` and return value as `output`.
+Works with any LLM library, regardless of `variables`.
 
 ```python
-import aops
-
-aops.init(api_key="aops_...", agent="my-agent")
-
 @aops.trace("classify")
 def classify(user_input: str) -> str:
-    prompt = aops.pull("classify")
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
     return call_any_llm(prompt, user_input)
 
 with aops.run():
-    result = classify(user_input)   # input + output recorded
+    result = classify(user_input)
 ```
 
-Works with `async def` and class methods transparently.
 > See [docs/integrations/decorator.md](integrations/decorator.md).
 
 ### How Input/Output Flows to the Backend
@@ -266,7 +260,7 @@ When a run exits, each chain call in the payload includes optional `input` and
   "chain_name": "classify",
   "called_at": "2025-01-15T10:23:01.456Z",
   "latency_ms": 38,
-  "input": "[system] Classify the inquiry...\n[user] My payment failed.",
+  "input": "You are a classifier...\n\nCustomer inquiry: My payment failed.",
   "output": "{\"category\": \"billing\", \"confidence\": 0.97}"
 }
 ```
