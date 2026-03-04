@@ -1,4 +1,3 @@
-import json
 import uuid
 from datetime import datetime, timezone
 
@@ -101,12 +100,10 @@ def pull(
     if variables:
         prompt = prompt.format(**variables)
 
-    input_str: str | None = None
-    if variables:
-        if len(variables) == 1:
-            input_str = str(next(iter(variables.values())))
-        else:
-            input_str = json.dumps(variables, ensure_ascii=False)
+    # Record the rendered prompt as input so logs show the full chain context
+    # (instructions + substituted variables). None when no variables were passed,
+    # meaning the chain is used as a static prompt with no runtime data.
+    input_str = prompt if variables else None
 
     ctx = get_current_run()
     if ctx is not None:
