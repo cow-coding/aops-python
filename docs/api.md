@@ -193,3 +193,103 @@ finally:
 ### `client.close()`
 
 Signals the background polling thread to stop and closes the underlying HTTP connection pool. Safe to call multiple times.
+
+---
+
+## `aops.run()`
+
+Context manager that traces all `pull()` calls within the block and posts the run to the backend on exit.
+
+```python
+with aops.run():
+    prompt = aops.pull("classify")
+    result = call_llm(prompt, user_input)
+# → POST /agents/{id}/runs on exit
+```
+
+See [Run Tracing](tracing.md) for full details.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `client` | `AopsClient \| None` | `None` | Use a custom client instead of the global one |
+
+---
+
+## `aops.wrap(client)`
+
+Wraps a sync `openai.OpenAI` client to automatically log `chat.completions.create()` input/output to the active run context.
+
+```python
+import openai
+from aops import wrap
+
+client = wrap(openai.OpenAI())
+
+with aops.run():
+    prompt = aops.pull("my-chain")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": "Hello"}],
+    )
+    # input (messages) + output (choices[0].message.content) recorded automatically
+```
+
+- Intercepts only `chat.completions.create()`. All other client attributes pass through unchanged.
+- Raises `TypeError` if passed an `openai.AsyncOpenAI` instance.
+- No-op when called outside an `aops.run()` block.
+
+> Requires `pip install openai`. See [docs/integrations/openai.md](integrations/openai.md).
+
+---
+
+## `@aops.trace(chain_name)`
+
+Decorator that captures a function's first meaningful argument as `input` and its return value as `output`, writing them to the most recent `pull(chain_name)` call in the active run.
+
+```python
+@aops.trace("classify")
+def classify(user_input: str) -> str:
+    prompt = aops.pull("classify")
+    return call_llm(prompt, user_input)
+
+with aops.run():
+    result = classify("My payment failed.")
+    # input = "My payment failed.", output = result
+```
+
+- Works with `async def` (detected automatically via `asyncio.iscoroutinefunction`)
+- Skips `self` and `cls` when determining the input argument
+- No-op (no I/O recorded) when called outside `aops.run()` or if the function raises
+
+> See [docs/integrations/decorator.md](integrations/decorator.md) for class method and async examples.
+
+---
+
+## `AopsCallbackHandler` — `from aops.langchain import AopsCallbackHandler`
+
+LangChain `BaseCallbackHandler` subclass that logs LLM input/output to the active run context.
+
+```python
+from aops.langchain import AopsCallbackHandler
+from langchain_openai import ChatOpenAI
+
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
+
+with aops.run():
+    prompt = aops.pull("my-chain")   # sets active chain context
+    result = llm.invoke([...])       # handler captures input + output
+```
+
+Hooks implemented:
+
+| Hook | Captures |
+|------|----------|
+| `on_chat_model_start` | Serialized message list as `input` (`[role] content` per message) |
+| `on_llm_start` | Raw prompt string as `input` |
+| `on_llm_end` | `generations[0][0].text` as `output` |
+
+- Only records when inside an `aops.run()` block and after a `pull()` call has set the active chain.
+- Thread and async safe via `ContextVar`.
+
+> Requires `pip install "aops[langchain]"`. See [docs/integrations/langchain.md](integrations/langchain.md).
