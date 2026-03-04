@@ -94,10 +94,12 @@ def run(*, client=None) -> Generator[RunContext, None, None]:
 
     ctx = RunContext()
     token = _current_run.set(ctx)
+    chain_token = _active_chain.set(None)
     try:
         yield ctx
     finally:
         ctx.ended_at = datetime.now(timezone.utc)
+        _active_chain.reset(chain_token)
         _current_run.reset(token)
 
         if ctx.agent_id is None or not ctx.chain_calls:
