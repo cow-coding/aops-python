@@ -48,7 +48,7 @@ def pull(
     *,
     version: int | None = None,
     client: AopsClient | None = None,
-    **variables: str,
+    variables: dict[str, str] | None = None,
 ) -> str:
     """Fetch a chain from AgentOps and return it as a raw string.
 
@@ -65,12 +65,12 @@ def pull(
                     current (latest saved) chain content.
         client:     Optional pre-configured :class:`~aops._client.AopsClient`.
                     When omitted the global configuration is used.
-        **variables: Template variables to substitute into the prompt.
-                     Keys must match ``{variable}`` placeholders in the chain
-                     content. Passed as keyword arguments::
+        variables:  Template variables to substitute into the prompt.
+                    Keys must match ``{variable}`` placeholders in the chain
+                    content::
 
-                         pull("classify", inquiry=user_input)
-                         pull("escalate", inquiry=user_input, response=llm_output)
+                        pull("classify", variables={"inquiry": user_input})
+                        pull("escalate", variables={"inquiry": user_input, "response": llm_output})
 
     Returns:
         A raw ``str`` combining the chain's ``persona`` and ``content``,
@@ -87,8 +87,8 @@ def pull(
         system_prompt = pull("system")
 
         # With variables — substituted and recorded as input in the trace
-        prompt = pull("classify", inquiry=user_input)
-        prompt = pull("escalate", inquiry=user_input, response=llm_output)
+        prompt = pull("classify", variables={"inquiry": user_input})
+        prompt = pull("escalate", variables={"inquiry": user_input, "response": llm_output})
     """
     from aops._run import _active_chain, get_current_run
 
