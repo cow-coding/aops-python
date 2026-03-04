@@ -1,4 +1,7 @@
-"""OpenAI SDK proxy that auto-logs inputs/outputs to AgentOps.
+"""OpenAI SDK proxy that auto-logs LLM output to AgentOps.
+
+Input is captured at ``pull()`` time via template variables.
+This proxy only records the LLM output for the active chain call.
 
 Supports sync ``openai.OpenAI`` only. ``AsyncOpenAI`` is not supported.
 """
@@ -7,34 +10,21 @@ from typing import Any
 from aops._run import _active_chain, get_current_run
 
 
-def _messages_to_str(messages: list[dict]) -> str:
-    parts = []
-    for msg in messages:
-        role = msg.get("role", "message")
-        content = msg.get("content", "")
-        parts.append(f"[{role}] {content}")
-    return "\n".join(parts)
-
-
 class _CompletionsProxy:
     def __init__(self, completions: Any) -> None:
         self._completions = completions
 
     def create(self, **kwargs: Any) -> Any:
-        chain_name = _active_chain.get()
-        ctx = get_current_run()
-
-        messages = kwargs.get("messages", [])
-        input_str = _messages_to_str(messages) if messages else None
-
         response = self._completions.create(**kwargs)
 
+        chain_name = _active_chain.get()
+        ctx = get_current_run()
         if chain_name and ctx is not None:
             try:
                 output = response.choices[0].message.content
             except (IndexError, AttributeError):
                 output = None
-            ctx.update_last_io(chain_name, input_str, output)
+            ctx.update_output(chain_name, output)
 
         return response
 
@@ -57,7 +47,10 @@ class _AopsOpenAIProxy:
 
 
 def wrap(client: Any) -> _AopsOpenAIProxy:
-    """Wrap a sync OpenAI client to auto-log inputs/outputs to AgentOps.
+    """Wrap a sync OpenAI client to auto-log LLM output to AgentOps.
+
+    Template variable inputs are captured at ``pull()`` time.
+    This wrapper only records the LLM output after each completion call.
 
     Supports sync ``openai.OpenAI`` only. ``AsyncOpenAI`` is not supported —
     use ``AopsCallbackHandler`` with LangChain for async workflows instead.
@@ -67,7 +60,7 @@ def wrap(client: Any) -> _AopsOpenAIProxy:
 
     Returns:
         A proxy client with the same interface, intercepting
-        ``chat.completions.create()`` to capture I/O.
+        ``chat.completions.create()`` to capture output.
 
     Raises:
         TypeError: If ``client`` is an ``openai.AsyncOpenAI`` instance.
@@ -80,7 +73,7 @@ def wrap(client: Any) -> _AopsOpenAIProxy:
         client = wrap(openai.OpenAI())
 
         with aops.run():
-            prompt = aops.pull("my-chain")
+            prompt = aops.pull("classify", inquiry=user_input)
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "system", "content": prompt}, ...],

@@ -44,10 +44,18 @@ class RunContext:
         chain_name: str,
         called_at: datetime,
         latency_ms: int | None = None,
+        input: str | None = None,
     ) -> None:
         self.chain_calls.append(
-            _ChainCall(chain_name=chain_name, called_at=called_at, latency_ms=latency_ms)
+            _ChainCall(chain_name=chain_name, called_at=called_at, latency_ms=latency_ms, input=input)
         )
+
+    def update_output(self, chain_name: str, output: str | None) -> None:
+        """Update output on the most recent call for the given chain_name."""
+        for call in reversed(self.chain_calls):
+            if call.chain_name == chain_name:
+                call.output = output
+                return
 
     def update_last_io(
         self,
