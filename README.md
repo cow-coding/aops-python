@@ -3,9 +3,14 @@
 [![PyPI](https://img.shields.io/pypi/v/aops)](https://pypi.org/project/aops/)
 [![Python](https://img.shields.io/pypi/pyversions/aops)](https://pypi.org/project/aops/)
 
-Python SDK for [AOps](https://github.com/cow-coding/aops) — prompt version management and agent tracing platform.
+Python SDK for [AOps](https://github.com/cow-coding/aops) — prompt version management and agent observability platform.
 
-Provides a framework-agnostic `pull()` that works with any LLM SDK, a `run()` context manager for execution tracing, and a LangChain integration.
+- **Pull prompts** from the AOps backend at runtime (any LLM SDK)
+- **Trace runs** — record which chains were called, in what order, and with what latency
+- **Capture LLM I/O** — log inputs and outputs per chain for full observability
+- **Live updates** — background polling reflects prompt edits without redeployment
+
+---
 
 ## Installation
 
@@ -16,127 +21,202 @@ pip install aops
 With LangChain integration:
 
 ```bash
-pip install "aops[langchain]"
+pip install "aops[langchain]" langchain-openai
 ```
+
+---
 
 ## Quick Start
 
-### Pull a prompt
+### 1. Get an API key
+
+In the AOps UI: **Agent detail page → API Keys → New API Key**
+
+The key embeds the server host — no separate `base_url` needed.
+
+### 2. Initialize and pull a prompt
 
 ```python
 import aops
-from aops import pull
-from openai import OpenAI
 
 aops.init(api_key="aops_...", agent="my-agent")
 
-system_prompt = pull("my-chain")  # agent resolved from init()
+prompt = aops.pull("my-chain")   # returns str
+```
 
+### 3. Trace a run
+
+Wrap your agent logic in `aops.run()` to record chain call order and latency:
+
+```python
+with aops.run():
+    classify_prompt = aops.pull("classify")       # traced
+    category = call_llm(classify_prompt, user_input)
+
+    respond_prompt = aops.pull(f"respond-{category}")   # traced
+    return call_llm(respond_prompt, user_input)
+# → posted to backend on exit, visible in the Flow tab
+```
+
+---
+
+## Capturing LLM Input / Output
+
+**Input** is captured at `pull()` time by passing `variables`. **Output** is captured after the LLM responds via your chosen integration.
+
+### Step 1 — Pass `variables` to `pull()`
+
+```python
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input = rendered prompt (chain instructions + substituted user_input)
+```
+
+### Step 2 — Capture output
+
+Choose the integration that fits your stack.
+
+### Option A — LangChain / LCEL (`AopsCallbackHandler`)
+
+```python
+from aops.langchain import AopsCallbackHandler
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
+
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
+    # output recorded automatically by handler
+```
+
+### Option B — OpenAI SDK (`wrap()`)
+
+```python
+import openai
+from aops import wrap
+
+client = wrap(openai.OpenAI())
+
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
+    )
+    # output recorded automatically by proxy
+```
+
+> `wrap()` supports `openai.OpenAI` (sync) only. For async, use `AopsCallbackHandler`.
+
+### Option C — Any framework (`@aops.trace` decorator)
+
+Captures the function's first argument as `input` and return value as `output`. Works with any LLM library.
+
+```python
+@aops.trace("classify")
+def classify(user_input: str) -> str:
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    return call_any_llm(prompt, user_input)
+
+with aops.run():
+    result = classify(user_input)
+```
+
+Supports `async def` and class methods transparently.
+
+---
+
+## Supported LLM SDKs
+
+`aops.pull()` returns a plain `str` — works with any LLM SDK out of the box.
+
+### OpenAI
+
+```python
+from openai import OpenAI
 client = OpenAI()
 response = client.chat.completions.create(
     model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "Hello!"},
-    ],
+    messages=[{"role": "system", "content": aops.pull("my-chain")}, ...],
 )
-print(response.choices[0].message.content)
 ```
 
-### Record execution traces
-
-Wrap your agent logic in `aops.run()` to automatically record which chains were called, in what order, and with what latency. The data is posted to the AOps backend and visualized in the **Flow** tab.
+### Anthropic
 
 ```python
-import aops
-
-aops.init(api_key="aops_...", agent="my-agent")
-
-# Chains pulled outside run() are not traced (good for shared system prompts)
-system_prompt = aops.pull("system")
-
-def handle(inquiry: str) -> str:
-    with aops.run():
-        classify_prompt = aops.pull("classify")      # traced
-        category = classify(classify_prompt, inquiry)
-
-        response_prompt = aops.pull(f"respond-{category}")  # traced
-        return respond(system_prompt, response_prompt, inquiry)
-```
-
-On block exit, the SDK posts `started_at`, `ended_at`, and the ordered list of chain calls to `POST /agents/:id/runs`. If the backend is unreachable, a warning is logged and the exception is suppressed — your agent is never interrupted by a tracing failure.
-
-### Anthropic SDK
-
-```python
-import aops
-from aops import pull
 from anthropic import Anthropic
-
-aops.init(api_key="aops_...", agent="my-agent")
-
-system_prompt = pull("my-chain")
-
 client = Anthropic()
 message = client.messages.create(
     model="claude-haiku-4-5-20251001",
     max_tokens=1024,
-    system=system_prompt,
+    system=aops.pull("my-chain"),
     messages=[{"role": "user", "content": "Hello!"}],
 )
-print(message.content[0].text)
 ```
 
-### LangChain
+### LangChain (prompt as `SystemMessagePromptTemplate`)
 
 ```python
-import aops
-from aops.langchain import pull
+from aops.langchain import pull   # returns SystemMessagePromptTemplate
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 
-aops.init(api_key="aops_...", agent="my-agent")
-
 prompt = pull("my-chain")
-
 chain = (
     ChatPromptTemplate.from_messages([
         prompt,
         HumanMessagePromptTemplate.from_template("{user_input}"),
     ])
     | ChatOpenAI(model="gpt-4o-mini")
-    | StrOutputParser()
 )
-
 result = chain.invoke({"user_input": "Hello!"})
 ```
+
+---
 
 ## Requirements
 
 - Python 3.12+
-- AOps backend running (self-hosted)
-- API key issued from the AOps UI: **Agent detail page → API Keys → New API Key**
+- AOps backend running (self-hosted) — see [github.com/cow-coding/aops](https://github.com/cow-coding/aops)
+- API key from the AOps UI
+
+---
 
 ## Examples
 
 ```
 examples/
-  openai_example.py     raw pull() + OpenAI SDK
-  anthropic_example.py  raw pull() + Anthropic SDK
-  langchain_example.py  aops.langchain — pull(), @chain_prompt
-  live_updates.py       background polling / live update detection
+  openai_example.py       pull() + wrap() + OpenAI SDK
+  anthropic_example.py    pull() + Anthropic SDK
+  langchain_example.py    AopsCallbackHandler + @chain_prompt
+  live_updates.py         background polling / live update detection
 ```
 
-## Docs
+---
+
+## Documentation
 
 | Guide | Description |
 |-------|-------------|
-| [Configuration](docs/configuration.md) | API key, `aops.init()`, environment variables |
-| [API Reference](docs/api.md) | `pull()`, `aops.langchain.pull()`, `@chain_prompt` |
-| [Live Updates](docs/live-updates.md) | Polling, pattern selection guide |
-| [Run Tracing](docs/tracing.md) | `aops.run()`, how traces are recorded and posted, async safety |
-| [LangChain Compatibility](docs/langchain.md) | Class-based vs LCEL, `RunnableLambda` lazy-pull pattern |
+| [Quickstart](docs/quickstart.md) | Step-by-step: from zero to first trace |
+| [Configuration](docs/configuration.md) | `aops.init()`, API keys, environment variables |
+| [API Reference](docs/api.md) | All public APIs: `pull()`, `run()`, `wrap()`, `@trace`, `AopsCallbackHandler` |
+| [Run Tracing](docs/tracing.md) | `aops.run()`, I/O capture, concurrency |
+| [Live Updates](docs/live-updates.md) | Background polling, prompt refresh patterns |
+| [LangChain](docs/langchain.md) | LCEL patterns, class-based chains, callback handler |
+
+### Integration Quick References
+
+| Integration | Guide |
+|-------------|-------|
+| LangChain / LCEL | [docs/integrations/langchain.md](docs/integrations/langchain.md) |
+| OpenAI SDK | [docs/integrations/openai.md](docs/integrations/openai.md) |
+| `@aops.trace` decorator | [docs/integrations/decorator.md](docs/integrations/decorator.md) |
+
+---
 
 ## License
 

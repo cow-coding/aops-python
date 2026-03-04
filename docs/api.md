@@ -20,7 +20,7 @@ aops.init(api_key="aops_...", agent="my-agent")
 
 ---
 
-## `pull(chain_name, *, version=None)` — `from aops import pull`
+## `pull(chain_name, *, version=None, variables=None)` — `from aops import pull`
 
 Fetches a chain and returns it as a raw **`str`**.
 Works with any LLM SDK (OpenAI, Anthropic, etc.) out of the box.
@@ -36,20 +36,44 @@ from aops import pull
 
 aops.init(api_key="aops_...", agent="my-agent")
 
-system_prompt = pull("my-chain")            # uses agent from init()
-system_prompt = pull("my-chain", version=2) # pinned version
-system_prompt = pull("other-agent/my-chain") # explicit cross-agent ref
+system_prompt = pull("my-chain")                        # no variables
+system_prompt = pull("my-chain", version=2)             # pinned version
+system_prompt = pull("other-agent/my-chain")            # cross-agent ref
+prompt = pull("classify", variables={"inquiry": text})  # with variables
 ```
 
-The chain's `persona` and `content` are merged into a single string:
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `chain_name` | `str` | — | Chain name or `"agent/chain"` ref |
+| `version` | `int \| None` | `None` | Pin a specific version. `None` = latest |
+| `client` | `AopsClient \| None` | `None` | Custom client instead of global |
+| `variables` | `dict[str, str] \| None` | `None` | Template variables to substitute into `{placeholders}` |
+
+The chain's `persona` and `content` are merged, then `variables` are substituted:
 
 ```
 {persona}
 
-{content}
+{content with {variable} placeholders filled in}
 ```
 
 If `persona` is empty, only `content` is returned.
+
+### Template Variables
+
+Pass a `variables` dict to substitute `{placeholder}` tokens in the chain content.
+This matches the OpenAI Responses API `variables={}` and LangChain `invoke({})` patterns:
+
+```python
+# Single variable
+prompt = pull("classify", variables={"inquiry": user_input})
+
+# Multiple variables
+prompt = pull("escalate", variables={"inquiry": user_input, "response": llm_output})
+```
+
+When `variables` is provided and the call is inside `aops.run()`, the **rendered prompt**
+(chain instructions + substituted values) is recorded as `input` in the trace log.
 
 ### OpenAI SDK example
 
@@ -193,3 +217,103 @@ finally:
 ### `client.close()`
 
 Signals the background polling thread to stop and closes the underlying HTTP connection pool. Safe to call multiple times.
+
+---
+
+## `aops.run()`
+
+Context manager that traces all `pull()` calls within the block and posts the run to the backend on exit.
+
+```python
+with aops.run():
+    prompt = aops.pull("classify")
+    result = call_llm(prompt, user_input)
+# → POST /agents/{id}/runs on exit
+```
+
+See [Run Tracing](tracing.md) for full details.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `client` | `AopsClient \| None` | `None` | Use a custom client instead of the global one |
+
+---
+
+## `aops.wrap(client)`
+
+Wraps a sync `openai.OpenAI` client to automatically record LLM **output** from `chat.completions.create()` to the active run context. **Input** is recorded at `pull()` time via `variables`.
+
+```python
+import openai
+from aops import wrap
+
+client = wrap(openai.OpenAI())
+
+with aops.run():
+    prompt = aops.pull("my-chain", variables={"inquiry": user_input})
+    # ↑ input recorded here
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
+    )
+    # ↑ output (choices[0].message.content) recorded automatically
+```
+
+- Intercepts only `chat.completions.create()`. All other client attributes pass through unchanged.
+- Raises `TypeError` if passed an `openai.AsyncOpenAI` instance.
+- No-op when called outside an `aops.run()` block.
+
+> Requires `pip install openai`. See [docs/integrations/openai.md](integrations/openai.md).
+
+---
+
+## `@aops.trace(chain_name)`
+
+Decorator that captures a function's first meaningful argument as `input` and its return value as `output`, writing them to the most recent `pull(chain_name)` call in the active run.
+
+```python
+@aops.trace("classify")
+def classify(user_input: str) -> str:
+    prompt = aops.pull("classify")
+    return call_llm(prompt, user_input)
+
+with aops.run():
+    result = classify("My payment failed.")
+    # input = "My payment failed.", output = result
+```
+
+- Works with `async def` (detected automatically via `asyncio.iscoroutinefunction`)
+- Skips `self` and `cls` when determining the input argument
+- No-op (no I/O recorded) when called outside `aops.run()` or if the function raises
+
+> See [docs/integrations/decorator.md](integrations/decorator.md) for class method and async examples.
+
+---
+
+## `AopsCallbackHandler` — `from aops.langchain import AopsCallbackHandler`
+
+LangChain `BaseCallbackHandler` subclass that records LLM **output** to the active run context.
+**Input** is recorded at `pull()` time via `variables` — the handler only handles output.
+
+```python
+from aops.langchain import AopsCallbackHandler
+from langchain_openai import ChatOpenAI
+
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
+
+with aops.run():
+    prompt = aops.pull("my-chain", variables={"inquiry": user_input})  # input recorded here
+    result = llm.invoke([...])                                          # output recorded here
+```
+
+Hooks implemented:
+
+| Hook | Captures |
+|------|----------|
+| `on_llm_end` | `generations[0][0].text` as `output` |
+
+- Only records when inside an `aops.run()` block and after a `pull()` call has set the active chain.
+- Thread and async safe via `ContextVar`.
+
+> Requires `pip install "aops[langchain]"`. See [docs/integrations/langchain.md](integrations/langchain.md).

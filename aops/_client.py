@@ -181,6 +181,8 @@ class AopsClient:
                     "chain_name": c.chain_name,
                     "called_at": c.called_at.isoformat(),
                     "latency_ms": c.latency_ms,
+                    "input": c.input,
+                    "output": c.output,
                 }
                 for c in ctx.chain_calls
             ],

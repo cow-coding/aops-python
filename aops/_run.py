@@ -26,6 +26,8 @@ class _ChainCall:
     chain_name: str
     called_at: datetime
     latency_ms: int | None = None
+    input: str | None = None
+    output: str | None = None
 
 
 @dataclass
@@ -42,13 +44,35 @@ class RunContext:
         chain_name: str,
         called_at: datetime,
         latency_ms: int | None = None,
+        input: str | None = None,
     ) -> None:
         self.chain_calls.append(
-            _ChainCall(chain_name=chain_name, called_at=called_at, latency_ms=latency_ms)
+            _ChainCall(chain_name=chain_name, called_at=called_at, latency_ms=latency_ms, input=input)
         )
+
+    def update_output(self, chain_name: str, output: str | None) -> None:
+        """Update output on the most recent call for the given chain_name."""
+        for call in reversed(self.chain_calls):
+            if call.chain_name == chain_name:
+                call.output = output
+                return
+
+    def update_last_io(
+        self,
+        chain_name: str,
+        input: str | None,
+        output: str | None,
+    ) -> None:
+        """Update input/output on the most recent call for the given chain_name."""
+        for call in reversed(self.chain_calls):
+            if call.chain_name == chain_name:
+                call.input = input
+                call.output = output
+                return
 
 
 _current_run: ContextVar[RunContext | None] = ContextVar("_current_run", default=None)
+_active_chain: ContextVar[str | None] = ContextVar("_active_chain", default=None)
 
 
 def get_current_run() -> RunContext | None:
@@ -78,10 +102,12 @@ def run(*, client=None) -> Generator[RunContext, None, None]:
 
     ctx = RunContext()
     token = _current_run.set(ctx)
+    chain_token = _active_chain.set(None)
     try:
         yield ctx
     finally:
         ctx.ended_at = datetime.now(timezone.utc)
+        _active_chain.reset(chain_token)
         _current_run.reset(token)
 
         if ctx.agent_id is None or not ctx.chain_calls:

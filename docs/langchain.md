@@ -180,6 +180,78 @@ with aops.run():
 
 ---
 
+## Capturing LLM Output with `AopsCallbackHandler`
+
+`AopsCallbackHandler` is a LangChain `BaseCallbackHandler` that automatically
+records the LLM output for each chain call inside an `aops.run()` block.
+
+**Input** is captured at `pull()` time via `variables`. The handler only handles **output**.
+
+```python
+import aops
+from aops.langchain import AopsCallbackHandler
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+
+aops.init(api_key="aops_...", agent="my-agent")
+
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
+
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input = rendered prompt recorded here
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
+    # ↑ output recorded by handler on llm_end
+```
+
+### How It Works
+
+1. `aops.pull("classify", variables={"inquiry": user_input})` renders the prompt,
+   records it as `input`, and sets `_active_chain = "classify"` in a `ContextVar`.
+2. `on_llm_end` fires after the LLM call → writes `generations[0][0].text` as
+   `output` to the most recent `"classify"` call in the active `RunContext`.
+
+### LCEL Example
+
+```python
+import aops
+from aops.langchain import AopsCallbackHandler
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.runnables import RunnableLambda
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import ChatOpenAI
+
+aops.init(api_key="aops_...", agent="cs-agent")
+
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
+
+def build_classify_messages(x: dict) -> list:
+    from aops import pull
+    prompt = pull("classify", variables={"inquiry": x["inquiry"]})
+    return [SystemMessage(content=prompt), HumanMessage(content=x["inquiry"])]
+
+classify_chain = RunnableLambda(build_classify_messages) | llm | StrOutputParser()
+
+with aops.run():
+    category = classify_chain.invoke({"inquiry": "My payment failed."})
+    # input recorded at pull() time, output recorded by handler
+```
+
+### Hooks
+
+| Hook | Captures |
+|------|----------|
+| `on_llm_end` | `generations[0][0].text` as `output` |
+
+- Only records output when inside an `aops.run()` block and after a `pull()` call.
+- Thread and `asyncio`-safe via `ContextVar`.
+
+> Requires `pip install "aops[langchain]"`. See also [docs/integrations/langchain.md](integrations/langchain.md).
+
+---
+
 ## Summary: When Is `pull()` Traced?
 
 | Pattern | Traced? | Notes |

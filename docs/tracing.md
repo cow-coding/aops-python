@@ -171,6 +171,104 @@ After a few requests, `GET /agents/{agent_id}/flow` returns data like:
 This is rendered as a flow graph in the AgentOps UI, showing which chains are
 called and how often.
 
+## Capturing LLM Input / Output
+
+By default, `aops.run()` records **which chains were called** and their latency.
+To also capture `input` and `output` per chain call:
+
+- **`input`** — recorded at `pull()` time when `variables` are passed: the rendered prompt (chain instructions + substituted values).
+- **`output`** — recorded after the LLM responds, via `AopsCallbackHandler`, `wrap()`, or `@aops.trace`.
+
+### Step 1 — Pass `variables` to `pull()`
+
+```python
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    # ↑ input recorded here: rendered prompt = chain instructions + user_input substituted
+```
+
+Without `variables`, `input` stays `None` — useful for static chains (e.g. a fixed system persona).
+
+### Step 2 — Capture output
+
+Pick one method based on your LLM library.
+
+#### Option A — LangChain `AopsCallbackHandler`
+
+```python
+import aops
+from aops.langchain import AopsCallbackHandler
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+
+aops.init(api_key="aops_...", agent="my-agent")
+handler = AopsCallbackHandler()
+llm = ChatOpenAI(model="gpt-4o-mini", callbacks=[handler])
+
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    result = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_input)])
+    # output recorded by handler on llm_end
+```
+
+> Requires `pip install "aops[langchain]"`. See [docs/integrations/langchain.md](integrations/langchain.md).
+
+#### Option B — OpenAI SDK `wrap()`
+
+```python
+import openai, aops
+from aops import wrap
+
+aops.init(api_key="aops_...", agent="my-agent")
+client = wrap(openai.OpenAI())
+
+with aops.run():
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
+    )
+    # output recorded by proxy on create()
+```
+
+> Supports `openai.OpenAI` (sync) only. See [docs/integrations/openai.md](integrations/openai.md).
+
+#### Option C — `@aops.trace` decorator
+
+Captures the function's first argument as `input` and return value as `output`.
+Works with any LLM library, regardless of `variables`.
+
+```python
+@aops.trace("classify")
+def classify(user_input: str) -> str:
+    prompt = aops.pull("classify", variables={"inquiry": user_input})
+    return call_any_llm(prompt, user_input)
+
+with aops.run():
+    result = classify(user_input)
+```
+
+> See [docs/integrations/decorator.md](integrations/decorator.md).
+
+### How Input/Output Flows to the Backend
+
+When a run exits, each chain call in the payload includes optional `input` and
+`output` fields:
+
+```json
+{
+  "chain_name": "classify",
+  "called_at": "2025-01-15T10:23:01.456Z",
+  "latency_ms": 38,
+  "input": "You are a classifier...\n\nCustomer inquiry: My payment failed.",
+  "output": "{\"category\": \"billing\", \"confidence\": 0.97}"
+}
+```
+
+The data is visible in the **Logs** tab of the chain detail page in the AOps UI.
+
+---
+
 ## `run()` API
 
 ```python

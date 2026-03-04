@@ -47,6 +47,7 @@ def pull(
     *,
     version: int | None = None,
     client: AopsClient | None = None,
+    variables: dict[str, str] | None = None,
 ) -> str:
     """Fetch a chain from AgentOps and return it as a raw string.
 
@@ -63,36 +64,61 @@ def pull(
                     current (latest saved) chain content.
         client:     Optional pre-configured :class:`~aops._client.AopsClient`.
                     When omitted the global configuration is used.
+        variables:  Template variables to substitute into the prompt.
+                    Keys must match ``{variable}`` placeholders in the chain
+                    content::
+
+                        pull("classify", variables={"inquiry": user_input})
+                        pull("escalate", variables={"inquiry": user_input, "response": llm_output})
 
     Returns:
-        A raw ``str`` combining the chain's ``persona`` and ``content``.
+        A raw ``str`` combining the chain's ``persona`` and ``content``,
+        with any ``{variable}`` placeholders substituted.
 
     Example::
 
-        # Recommended — declare agent once at startup:
         import aops
         aops.init(api_key="aops_...", agent="my-agent")
 
         from aops import pull
-        system_prompt = pull("my-chain")
 
-        # Full ref also accepted (e.g. for cross-agent access):
-        system_prompt = pull("other-agent/my-chain")
+        # No variables
+        system_prompt = pull("system")
+
+        # With variables — substituted and recorded as input in the trace
+        prompt = pull("classify", variables={"inquiry": user_input})
+        prompt = pull("escalate", variables={"inquiry": user_input, "response": llm_output})
     """
-    from aops._run import get_current_run
+    from aops._run import _active_chain, get_current_run
 
     c = client or AopsClient()
     called_at = datetime.now(timezone.utc)
     agent_id, resolved_chain, persona, content = _fetch_chain(chain_name, version, c)
     latency_ms = int((datetime.now(timezone.utc) - called_at).total_seconds() * 1000)
 
+    prompt = format_prompt(persona, content)
+    if variables:
+        prompt = prompt.format(**variables)
+
+    # Record the rendered prompt as input so logs show the full chain context
+    # (instructions + substituted variables). None when no variables were passed,
+    # meaning the chain is used as a static prompt with no runtime data.
+    input_str = prompt if variables else None
+
     ctx = get_current_run()
     if ctx is not None:
         if ctx.agent_id is None:
             ctx.agent_id = agent_id
-        ctx.record_call(chain_name=resolved_chain, called_at=called_at, latency_ms=latency_ms)
+        ctx.record_call(
+            chain_name=resolved_chain,
+            called_at=called_at,
+            latency_ms=latency_ms,
+            input=input_str,
+        )
 
-    return format_prompt(persona, content)
+    _active_chain.set(resolved_chain)
+
+    return prompt
 
 
 def _resolve_ref(chain_name: str) -> tuple[str, str]:
