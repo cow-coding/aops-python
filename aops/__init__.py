@@ -10,7 +10,7 @@ Quick start::
 """
 
 from aops._client import AopsClient
-from aops._config import init
+from aops._config import get_client, init
 from aops._decorators import trace
 from aops._exceptions import (
     AgentNotFoundError,
@@ -26,6 +26,7 @@ from aops.openai import wrap
 
 __all__ = [
     "init",
+    "get_client",
     "pull",
     "run",
     "trace",

@@ -48,28 +48,36 @@ def trace(chain_name: str) -> Callable:
             from aops._run import get_current_run
 
             input_str = _get_input(args, kwargs)
-            result = func(*args, **kwargs)
-            output_str = str(result) if result is not None else None
-
-            ctx = get_current_run()
-            if ctx is not None:
-                ctx.update_last_io(chain_name, input_str, output_str)
-
-            return result
+            try:
+                result = func(*args, **kwargs)
+                output_str = str(result) if result is not None else None
+                ctx = get_current_run()
+                if ctx is not None:
+                    ctx.update_last_io(chain_name, input_str, output_str)
+                return result
+            except Exception as e:
+                ctx = get_current_run()
+                if ctx is not None:
+                    ctx.record_chain_error(chain_name, str(e))
+                raise
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             from aops._run import get_current_run
 
             input_str = _get_input(args, kwargs)
-            result = await func(*args, **kwargs)
-            output_str = str(result) if result is not None else None
-
-            ctx = get_current_run()
-            if ctx is not None:
-                ctx.update_last_io(chain_name, input_str, output_str)
-
-            return result
+            try:
+                result = await func(*args, **kwargs)
+                output_str = str(result) if result is not None else None
+                ctx = get_current_run()
+                if ctx is not None:
+                    ctx.update_last_io(chain_name, input_str, output_str)
+                return result
+            except Exception as e:
+                ctx = get_current_run()
+                if ctx is not None:
+                    ctx.record_chain_error(chain_name, str(e))
+                raise
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else wrapper
 

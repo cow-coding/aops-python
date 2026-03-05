@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from aops._client import AopsClient
-from aops._config import get_config
+from aops._config import get_client, get_config
 
 
 def format_prompt(persona: str | None, content: str) -> str:
@@ -91,7 +91,7 @@ def pull(
     """
     from aops._run import _active_chain, get_current_run
 
-    c = client or AopsClient()
+    c = client or get_client()
     called_at = datetime.now(timezone.utc)
     agent_id, resolved_chain, persona, content = _fetch_chain(chain_name, version, c)
     latency_ms = int((datetime.now(timezone.utc) - called_at).total_seconds() * 1000)
