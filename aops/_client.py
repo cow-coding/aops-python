@@ -47,6 +47,7 @@ class AopsClient:
         self._cache = TTLCache(ttl)
         self._poll_interval = interval
         self._poll_targets: dict[str, tuple[uuid.UUID, uuid.UUID]] = {}  # cache_key → (agent_id, chain_id)
+        self._poll_agents: dict[uuid.UUID, str] = {}  # agent_id → agent_name
         self._poll_lock = threading.Lock()
         self._http = httpx.Client(timeout=httpx.Timeout(10.0))
         self._stop_event = threading.Event()
@@ -113,7 +114,9 @@ class AopsClient:
     def _refresh_chains(self) -> None:
         with self._poll_lock:
             targets = dict(self._poll_targets)
+            poll_agents = dict(self._poll_agents)
 
+        refreshed_agents: set[uuid.UUID] = set()
         for cache_key, (agent_id, chain_id) in targets.items():
             try:
                 data = self._get(f"/agents/{agent_id}/chains/{chain_id}")
@@ -125,6 +128,16 @@ class AopsClient:
                         _logger.info("aops: chain '%s' updated (v%s)", fresh.name, fresh.updated_at)
             except Exception as exc:
                 _logger.debug("aops: poll failed for %s: %s", cache_key, exc)
+
+            if agent_id not in refreshed_agents:
+                agent_name = poll_agents.get(agent_id)
+                if agent_name:
+                    try:
+                        agent_data = self._get(f"/agents/{agent_id}")
+                        self._cache.set(f"agent:{agent_name}", AgentModel(**agent_data))
+                    except Exception as exc:
+                        _logger.debug("aops: poll failed for agent %s: %s", agent_name, exc)
+                    refreshed_agents.add(agent_id)
 
     # ------------------------------------------------------------------
     # Public API
@@ -140,6 +153,8 @@ class AopsClient:
         for agent in agents:
             if agent.name == agent_name:
                 self._cache.set(cache_key, agent)
+                with self._poll_lock:
+                    self._poll_agents[agent.id] = agent_name
                 return agent
 
         raise AgentNotFoundError(
@@ -176,6 +191,10 @@ class AopsClient:
         payload = {
             "started_at": ctx.started_at.isoformat(),
             "ended_at": ctx.ended_at.isoformat() if ctx.ended_at else None,
+            "status": ctx.status,
+            "error_type": ctx.error_type,
+            "error_message": ctx.error_message,
+            "error_traceback": ctx.error_traceback,
             "chain_calls": [
                 {
                     "chain_name": c.chain_name,
@@ -183,6 +202,8 @@ class AopsClient:
                     "latency_ms": c.latency_ms,
                     "input": c.input,
                     "output": c.output,
+                    "status": c.status,
+                    "error_message": c.error_message,
                 }
                 for c in ctx.chain_calls
             ],
