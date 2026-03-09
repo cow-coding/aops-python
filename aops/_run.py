@@ -62,10 +62,17 @@ class RunContext:
         )
 
     def update_output(self, chain_name: str, output: str | None) -> None:
-        """Update output on the most recent call for the given chain_name."""
+        """Update output and latency on the most recent call for the given chain_name.
+
+        latency_ms is computed as the elapsed time from ``called_at`` (set at
+        ``pull()`` time) to now, measuring the full input→output duration
+        including the LLM call.
+        """
+        now = datetime.now(timezone.utc)
         for call in reversed(self.chain_calls):
             if call.chain_name == chain_name:
                 call.output = output
+                call.latency_ms = int((now - call.called_at).total_seconds() * 1000)
                 return
 
     def update_last_io(
