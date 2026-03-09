@@ -1,4 +1,5 @@
 import os
+import threading
 from dataclasses import dataclass
 
 from aops._keys import InvalidApiKeyError, parse_key
@@ -19,6 +20,8 @@ class Config:
 
 
 _config: Config | None = None
+_client: "AopsClient | None" = None
+_client_lock = threading.Lock()
 
 
 def init(
@@ -52,6 +55,7 @@ def init(
         AGENTOPS_POLL_INTERVAL — default: 60 (seconds); 0 = disable polling
     """
     global _config
+    _reset_client()  # discard stale singleton so next get_client() picks up new config
 
     resolved_key = api_key or os.getenv("AGENTOPS_API_KEY")
     explicit_url = base_url or os.getenv("AGENTOPS_BASE_URL")
@@ -87,6 +91,33 @@ def get_config() -> Config:
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
+def get_client() -> "AopsClient":
+    """Return the global singleton AopsClient, creating it on first call.
+
+    This ensures a single HTTP connection pool, shared cache, and one
+    background poller thread across the entire process lifetime.
+    Thread-safe via double-checked locking.
+    """
+    global _client
+    if _client is not None:
+        return _client
+    with _client_lock:
+        if _client is None:
+            from aops._client import AopsClient
+            _client = AopsClient()
+    return _client
+
+
+def _reset_client() -> None:
+    """Close and discard the singleton client (used after re-init)."""
+    global _client
+    with _client_lock:
+        old = _client
+        _client = None
+    if old is not None:
+        old.close()
+
 
 def _resolve_base_url(api_key: str | None, explicit_url: str | None) -> str:
     """Determine the base URL from the key and/or an explicit override."""
