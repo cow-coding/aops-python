@@ -30,6 +30,17 @@ class _CompletionsProxy:
             except AttributeError:
                 model_name = None
             ctx.update_model_name(chain_name, model_name)
+            try:
+                usage = response.usage
+                if usage is not None:
+                    ctx.update_tokens(
+                        chain_name,
+                        getattr(usage, 'prompt_tokens', None),
+                        getattr(usage, 'completion_tokens', None),
+                        getattr(usage, 'total_tokens', None),
+                    )
+            except AttributeError:
+                pass
 
         return response
 

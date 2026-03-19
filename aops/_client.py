@@ -203,6 +203,9 @@ class AopsClient:
                     "input": c.input,
                     "output": c.output,
                     "model_name": c.model_name,
+                    "prompt_tokens": c.prompt_tokens,
+                    "completion_tokens": c.completion_tokens,
+                    "total_tokens": c.total_tokens,
                     "status": c.status,
                     "error_message": c.error_message,
                 }

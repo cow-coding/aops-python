@@ -58,3 +58,18 @@ class AopsCallbackHandler(BaseCallbackHandler):
                 or None
             )
         ctx.update_model_name(chain_name, model_name)
+
+        # Extract token usage
+        try:
+            token_usage = None
+            if hasattr(response, 'llm_output') and isinstance(response.llm_output, dict):
+                token_usage = response.llm_output.get('token_usage') or response.llm_output.get('usage')
+            if token_usage and isinstance(token_usage, dict):
+                ctx.update_tokens(
+                    chain_name,
+                    token_usage.get('prompt_tokens'),
+                    token_usage.get('completion_tokens'),
+                    token_usage.get('total_tokens'),
+                )
+        except Exception:
+            pass
