@@ -202,6 +202,7 @@ class AopsClient:
                     "latency_ms": c.latency_ms,
                     "input": c.input,
                     "output": c.output,
+                    "model_name": c.model_name,
                     "status": c.status,
                     "error_message": c.error_message,
                 }

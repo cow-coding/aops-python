@@ -25,6 +25,11 @@ class _CompletionsProxy:
             except (IndexError, AttributeError):
                 output = None
             ctx.update_output(chain_name, output)
+            try:
+                model_name = response.model or None
+            except AttributeError:
+                model_name = None
+            ctx.update_model_name(chain_name, model_name)
 
         return response
 
