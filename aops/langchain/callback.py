@@ -44,3 +44,32 @@ class AopsCallbackHandler(BaseCallbackHandler):
             output = None
 
         ctx.update_output(chain_name, output)
+
+        model_name: str | None = None
+        try:
+            meta = response.generations[0][0].message.response_metadata  # type: ignore[union-attr]
+            model_name = meta.get("model_name") or meta.get("model") or None
+        except (IndexError, AttributeError, TypeError):
+            pass
+        if model_name is None and response.llm_output:
+            model_name = (
+                response.llm_output.get("model_name")
+                or response.llm_output.get("model")
+                or None
+            )
+        ctx.update_model_name(chain_name, model_name)
+
+        # Extract token usage
+        try:
+            token_usage = None
+            if hasattr(response, 'llm_output') and isinstance(response.llm_output, dict):
+                token_usage = response.llm_output.get('token_usage') or response.llm_output.get('usage')
+            if token_usage and isinstance(token_usage, dict):
+                ctx.update_tokens(
+                    chain_name,
+                    token_usage.get('prompt_tokens'),
+                    token_usage.get('completion_tokens'),
+                    token_usage.get('total_tokens'),
+                )
+        except Exception:
+            pass

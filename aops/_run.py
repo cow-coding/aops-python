@@ -33,6 +33,10 @@ class _ChainCall:
     latency_ms: int | None = None
     input: str | None = None
     output: str | None = None
+    model_name: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
     status: str = "success"
     error_message: str | None = None
 
@@ -86,6 +90,22 @@ class RunContext:
             if call.chain_name == chain_name:
                 call.input = input
                 call.output = output
+                return
+
+    def update_model_name(self, chain_name: str, model_name: str | None) -> None:
+        """Update model_name on the most recent call for the given chain_name."""
+        for call in reversed(self.chain_calls):
+            if call.chain_name == chain_name:
+                call.model_name = model_name
+                return
+
+    def update_tokens(self, chain_name: str, prompt_tokens: int | None, completion_tokens: int | None, total_tokens: int | None) -> None:
+        """Update token usage on the most recent call for the given chain_name."""
+        for call in reversed(self.chain_calls):
+            if call.chain_name == chain_name:
+                call.prompt_tokens = prompt_tokens
+                call.completion_tokens = completion_tokens
+                call.total_tokens = total_tokens
                 return
 
     def record_chain_error(self, chain_name: str, error_message: str) -> None:
